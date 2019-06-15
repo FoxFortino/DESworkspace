@@ -40,3 +40,4 @@ Thumbs.db
 *.pyo
 *~
 .ipynb_checkpoints
+.ipynb_checkpoints/*
