@@ -39,5 +39,4 @@ Thumbs.db
 *.pyc
 *.pyo
 *~
-.ipynb_checkpoints
-.ipynb_checkpoints/*
+.ipynb_checkpoints/
