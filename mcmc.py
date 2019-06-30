@@ -29,7 +29,7 @@ class MCMC(object):
     def step(self, save=True):
         """Take a single step in the chain"""
         theta_new =  self.rng.normal(loc=self.theta, scale=self.step_size, size=self.theta.shape[0])
-        while np.any(theta_new < 0):
+        while np.any(theta_new[:3] < 0):
             theta_new =  self.rng.normal(loc=self.theta, scale=self.step_size, size=self.theta.shape[0])
         self.theta_news = np.vstack((self.theta_news, theta_new))
         p_new = self.log_likelihood(self.data, theta_new)
