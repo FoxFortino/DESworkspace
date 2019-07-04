@@ -117,11 +117,11 @@ class GPR(object):
         """Generate relevant covariance matrices."""
         if self.verbose: print("Generating elliptical covariance function...")
         data = self.gen_coordinate_arrays(self.Xtrain, self.Xtrain)
-        self.K = self.EBF(data, theta, self.tensor)
+        self.K = self.EBF(data, theta)
         data = self.gen_coordinate_arrays(self.Xtest, self.Xtest)
-        self.Kss = self.EBF(data, theta, self.tensor)
+        self.Kss = self.EBF(data, theta)
         data = self.gen_coordinate_arrays(self.Xtest, self.Xtrain)
-        self.Ks = self.EBF(data, theta, self.tensor)
+        self.Ks = self.EBF(data, theta)
         
     def train(self):
         if self.verbose: print("Solving for posterior...")
