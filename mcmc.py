@@ -48,7 +48,8 @@ class MCMC(object):
             take_step = True
             self.current_nll = nll_new
             self.theta = theta_new
-            self.nAccept += 1
+            if save:
+                self.nAccept += 1
         else:
             take_step = False
         
