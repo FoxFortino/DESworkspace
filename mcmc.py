@@ -10,64 +10,63 @@ import forAustin as fa
 import gpr
 
 class MCMC(object):
-    def __init__(self, log_likelihood, data, theta, step_size, names=None, seed=314159):
-        self.log_likelihood = log_likelihood
+    def __init__(self, nll_fn, data, theta, step_size, names=None, seed=314159):
+        """Markov Chain Monte Carlo Metropolis Hastings Algorithm.
+        
+        Parameters
+        nll_fn    : negative log likelihood function
+        data      : data used to evaluate the likelihood in whichever form nll_fn requires
+        theta     : list of model parameters used to evaluate the likelihood
+        step_size : list step size for each model parameter (theta)
+        names     : list of names for histogram and trace plots
+        seed      : random seed that determines random walk
+        """
+        self.nll_fn = nll_fn
         self.data = data
         self.theta = np.array(theta)
-        self.nparams = len(theta)
         self.step_size = np.array(step_size)
-        self.rng = np.random.RandomState(seed)
-        self.naccept = 0
-        self.current_loglike = log_likelihood(self.data, self.theta)
-        self.samples = []
         if names is None:
             names = ["Parameter {:d}".format(k+1) for k in range(self.nparams)]
-        self.names = names      
+        self.names = names
+        self.rng = np.random.RandomState(seed)
         
-        self.theta_news = np.array([0, 0, 0, 0])
+        self.nParams = self.theta.shape[0]
+        self.current_nll = nll_fn(self.data, self.theta)
+        self.nAccept = 0
+        self.samples = []
 
     def step(self, save=True):
-        """Take a single step in the chain"""
-        theta_new =  self.rng.normal(loc=self.theta, scale=self.step_size, size=self.theta.shape[0])
-        while np.any(theta_new[:3] < 0):
-            theta_new =  self.rng.normal(loc=self.theta, scale=self.step_size, size=self.theta.shape[0])
-        self.theta_news = np.vstack((self.theta_news, theta_new))
-        p_new = self.log_likelihood(self.data, theta_new)
-        ratio = np.exp(p_new - self.current_loglike)
-
-        if ratio >= 1.0:
-            take_step = 1
-        else:
-            stepran = self.rng.uniform()
-            if stepran < ratio:
-                take_step = 1
-            else:
-                take_step = 0
-
-        if take_step:
-            self.current_loglike = p_new
+        theta_new =  self.rng.normal(loc=self.theta, scale=self.step_size, size=self.nParams)
+        while np.any(theta_new[:3] <= 0): # Make sure that first three parameters never go below zero
+            theta_new =  self.rng.normal(loc=self.theta, scale=self.step_size, size=self.nParams)
+        
+        nll_new = self.nll_fn(self.data, theta_new)
+        acceptance_probability = np.min((1, np.exp(nll_new - self.current_nll)))
+        random_acceptance_probability = self.rng.uniform()
+        
+        if acceptance_probability > random_acceptance_probability:
+            take_step = True
+            self.current_nll = nll_new
             self.theta = theta_new
-
+            self.nAccept += 1
+        else:
+            take_step = False
+        
         if save:
             self.samples.append(self.theta)
-            
-        if save and take_step:
-            self.naccept += 1
         
-    def burn(self, nburn):
-        """Take nburn steps, but don't save the results"""
-        for i in range(nburn):
+    def burn(self, nBurn):
+        for i in range(nBurn):
             self.step(save=False)
 
-    def run(self, nsteps):
-        """Take nsteps steps"""
-        for i in range(nsteps):
+    def run(self, nSteps):
+        for i in range(nSteps):
             self.step()
 
     def accept_fraction(self):
         """Returns the fraction of candidate steps that were accpeted so far."""
         if len(self.samples) > 0:
-            return float(self.naccept) / len(self.samples)
+            return float(self.nAccept) / len(self.samples)
         else:
             return 0.
         
@@ -80,14 +79,14 @@ class MCMC(object):
         In addition, you can reset theta to a new starting value if theta is not None.
         """
         if step_size is not None:
-            assert len(step_size) == self.nparams
+            assert len(step_size) == self.nParams
             self.step_size = np.array(step_size)
         if theta is not None:
-            assert len(theta) == self.nparams
+            assert len(theta) == self.nParams
             self.theta = np.array(theta)
-            self.current_loglike = self.log_likelihood(self.data, self.theta)
+            self.current_nll = self.nll_fn(self.data, self.theta)
         self.samples = []
-        self.naccept = 0
+        self.nAccept = 0
         
     def get_samples(self):
         """Return the sampled theta values at each step in the chain as a 2d numpy array."""
@@ -96,7 +95,7 @@ class MCMC(object):
     def plot_hist(self):
         """Plot a histogram of the sample values for each parameter in the theta vector."""
         all_samples = self.get_samples()
-        for k in range(self.nparams):
+        for k in range(self.nParams):
             theta_k = all_samples[:,k]
             plt.hist(theta_k, bins=100)
             plt.xlabel(self.names[k])
@@ -106,7 +105,7 @@ class MCMC(object):
     def plot_samples(self):
         """Plot the sample values over the course of the chain so far."""
         all_samples = self.get_samples()
-        for k in range(self.nparams):
+        for k in range(self.nParams):
             theta_k = all_samples[:,k]
             plt.plot(range(len(theta_k)), theta_k)
             plt.xlabel("Step in chain")

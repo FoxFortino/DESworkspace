@@ -1,13 +1,13 @@
 from time import time
 import numpy as np
+import tensorflow as tf
+import tensorflow_probability as tfp
 import astropy.units as u
 import astropy.constants as c
 import astropy.io.fits as pf
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 
-import gpr
-import mcmc
 import forAustin as fa
 
 class GPR(object):
@@ -67,7 +67,7 @@ class GPR(object):
         self.split_data()
         self.gen_White_Covariance()
     
-    def EBF(self, data, theta):
+    def EBF(self, data, theta, tfp):
         uu1 = data[0]
         uu2 = data[1]
         vv1 = data[2]
@@ -78,15 +78,30 @@ class GPR(object):
         sigma_y = theta[2]
         phi = theta[3]
         
+        if tfp:
+            a = tf.cos(phi)**2 / (2 * sigma_x**2) + tf.sin(phi)**2 / (2 * sigma_y**2)
+            b = - tf.sin(2 * phi) / (4 * sigma_x**2) + tf.sin(2 * phi) / (4 * sigma_y**2)
+            c = tf.sin(phi)**2 / (2 * sigma_x**2) + tf.cos(phi)**2 / (2 * sigma_y**2)
+           
+            uu = a * (uu1 - uu2)**2
+            vv = c * (vv1 - vv2)**2
+            uv = 2 * b * (uu1 - uu2)*(vv1 - vv2)
+            
+            K = var_s * tf.exp(-(uu + vv + uv))
+            
+            return K
+
         a = np.cos(phi)**2 / (2 * sigma_x**2) + np.sin(phi)**2 / (2 * sigma_y**2)
         b = - np.sin(2 * phi) / (4 * sigma_x**2) + np.sin(2 * phi) / (4 * sigma_y**2)
         c = np.sin(phi)**2 / (2 * sigma_x**2) + np.cos(phi)**2 / (2 * sigma_y**2)
-        
+
         uu = a * (uu1 - uu2)**2
         vv = c * (vv1 - vv2)**2
-        uv = b * (uu1 - uu2)*(vv1 - vv2)
+        uv = 2 * b * (uu1 - uu2)*(vv1 - vv2)
         
-        return var_s * np.exp(-(uu + vv + uv))
+        K = var_s * np.exp(-(uu + vv + uv))
+    
+        return K
     
     def gen_coordinate_arrays(self, X, Y):
         u1, u2 = X[:, 0], Y[:, 0]
@@ -97,17 +112,17 @@ class GPR(object):
         
         return uu1, uu2, vv1, vv2
         
-    def gen_RBF_Covariance(self, theta):
+    def gen_RBF_Covariance(self, theta, tfp):
         """Generate relevant covariance matrices."""
         if self.verbose: print("Generating elliptical covariance function...")
         data = self.gen_coordinate_arrays(self.Xtrain, self.Xtrain)
-        self.K = self.EBF(data, theta)
+        self.K = self.EBF(data, theta, tfp)
         data = self.gen_coordinate_arrays(self.Xtest, self.Xtest)
-        self.Kss = self.EBF(data, theta)
+        self.Kss = self.EBF(data, theta, tfp)
         data = self.gen_coordinate_arrays(self.Xtest, self.Xtrain)
-        self.Ks = self.EBF(data, theta)
+        self.Ks = self.EBF(data, theta, tfp)
         
-    def train(self):
+    def train(self, tfp):
         if self.verbose: print("Solving for posterior...")
         t0 = time()
         # The following commented-out code solves for the posterior distribution but
@@ -119,6 +134,17 @@ class GPR(object):
         # self.V_s = self.Kss - (self.Ks.T).dot(KW_inv).dot(self.Ks)
         # self.sigma = np.sqrt(np.abs(np.diag(self.V_s)))
         
+        if tfp:
+            self.L = tf.linalg.cholesky(self.K + self.W)
+            self.alpha = tf.linalg.solve(tf.transpose(self.L), tf.linalg.solve(self.L, self.Ytrain))
+            self.fbar_s = tf.tensordot(tf.transpose(self.Ks), self.alpha, axes=1)
+
+            self.v = tf.linalg.solve(self.L, self.Ks)
+            self.V_s = self.Kss - tf.tensordot(tf.transpose(self.v), self.v, axes=1)
+            self.sigma = tf.math.sqrt(tf.math.abs(tf.linalg.tensor_diag(self.V_s)))
+
+            return
+        
         self.L = np.linalg.cholesky(self.K + self.W)
         self.alpha = np.linalg.solve(self.L.T, np.linalg.solve(self.L, self.Ytrain))
         self.fbar_s = np.dot(self.Ks.T, self.alpha)
@@ -126,12 +152,12 @@ class GPR(object):
         self.v = np.linalg.solve(self.L, self.Ks)
         self.V_s = self.Kss - np.dot(self.v.T, self.v)
         self.sigma = np.sqrt(np.abs(np.diag(self.V_s)))
-        tf = time()
+        t1 = time()
         if self.verbose: print(f"Posterior found in {np.round(tf-t0, 3)} seconds.\n")
 
-    def fit(self, theta):
-        self.gen_RBF_Covariance(theta)
-        self.train()
+    def fit(self, theta, tfp=False):
+        self.gen_RBF_Covariance(theta, tfp=tfp)
+        self.train(tfp=tfp)
     
     def summary(self):
         print(f"Current Log Marginal Likelihood: {self.get_LML()}")
@@ -142,6 +168,20 @@ class GPR(object):
         self.plot_quiver_GP()
         self.plot_quiver_fits()
         self.plot_resres()
+        
+    def convert2numpy(self):
+        """Converts posterior solution from tensorflow tensors to numpy arrays."""
+        self.L = tf.Session().run(self.L)
+        self.alpha = tf.Session().run(self.alpha)
+        self.fbar_s = tf.Session().run(self.fbar_s)
+        
+        self.v = tf.Session().run(self.v)
+        self.V_s = tf.Session().run(self.V_s)
+        self.sigma = tf.Session().run(self.sigma)
+        
+        self.K = tf.Session().run(self.K)
+        self.Ks = tf.Session().run(self.Ks)
+        self.Kss = tf.Session().run(self.Kss)
     
     def draw_posterior(self, size=1):
         """Draw from the posterior distribution."""
@@ -155,11 +195,22 @@ class GPR(object):
         dy = np.random.multivariate_normal(np.zeros(self.Xtest.shape[0]), self.Kss + self.Wss, size=size).T
         return dx, dy
     
-    def get_LML(self):
+    def get_LML(self, tfp):
         """Calculates the log marginal likelihood based on the current posterior predictive
         mean and the current posterior predictive variance."""
-        LML = (-1/2) * np.dot(self.Ytrain.T, self.alpha) - np.sum(np.log(np.diag(self.L))) - (self.Ytest.shape[0] / 2) * np.log(2 * np.pi)
-        return np.sum(np.diag(LML))
+        if tfp:
+            LML_a = (-1/2) * tf.tensordot(self.Ytrain.T, self.alpha, axes=1)
+            LML_b =  - tf.math.reduce_sum(tf.math.log(tf.linalg.tensor_diag(self.L)))
+            LML_c =  - (self.Ytest.shape[0] / 2) * np.log(2 * np.pi)
+            LML = tf.math.reduce_sum(tf.linalg.diag(LML_a + LML_b + LML_c))
+            return LML
+        
+        LML_a = (-1/2) * np.dot(self.Ytrain.T, self.alpha)
+        LML_b = - np.sum(np.log(np.diag(self.L)))
+        LML_C = -(self.Ytest.shape[0] / 2) * np.log(2 * np.pi)
+        LML = np.sum(np.diag(LML_a + LML_b + LML_c))
+
+        return LML
     
     def get_std(self):
         std0_dx = np.std(self.Ytest[:, 0])
@@ -170,7 +221,7 @@ class GPR(object):
         improvement_dy = std0_dy / stdf_dy
         print(f"Standard deviation of validation residuals: dx {np.round(std0_dx, 3)}, dy {np.round(std0_dy, 3)}")
         print(f"Standard deviation of Gaussian Process residuals: dx {np.round(stdf_dx, 3)}, dy {np.round(stdf_dy, 3)}")
-        print(f"The ratio of validation residuals over GP residuals is: dx {np.round(improvement_dx, 3)}, dy {np.round(improvement_dy, 3)}")
+        print(f"The ratio of std(valid) / std(GP): dx {np.round(improvement_dx, 3)}, dy {np.round(improvement_dy, 3)}")
               
     def plot_uv(self):
         plt.figure(figsize=(8, 8))
