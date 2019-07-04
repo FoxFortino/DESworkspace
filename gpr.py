@@ -208,7 +208,7 @@ class GPR(object):
         
         LML_a = (-1/2) * np.dot(self.Ytrain.T, self.alpha)
         LML_b = - np.sum(np.log(np.diag(self.L)))
-        LML_C = -(self.Ytest.shape[0] / 2) * np.log(2 * np.pi)
+        LML_c = -(self.Ytest.shape[0] / 2) * np.log(2 * np.pi)
         LML = np.sum(np.diag(LML_a + LML_b + LML_c))
 
         return LML
