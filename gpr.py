@@ -53,7 +53,7 @@ class GPR(object):
         self.W = np.diag(self.Etrain) + self.eps * np.eye(self.Etrain.shape[0])
         self.Wss = np.diag(self.Etest) + self.eps * np.eye(self.Etest.shape[0])
     
-    def __init__(self, datafile, nExposure, sample=None, verbose=False, eps=1.49e-8, test_size=0.20, random_state=None):
+    def __init__(self, datafile, nExposure, sample=None, verbose=False, eps=1.49e-8, test_size=0.20, random_state=None, tensor=False):
         self.datafile = datafile        
         self.nExposure = nExposure
         self.sample = sample
@@ -61,13 +61,14 @@ class GPR(object):
         self.eps = eps
         self.test_size = test_size
         self.random_state = random_state
+        self.tensor = tensor
         
         self.extract_exposure()
         self.extract_data()
         self.split_data()
         self.gen_White_Covariance()
     
-    def EBF(self, data, theta, tfp):
+    def EBF(self, data, theta):
         uu1 = data[0]
         uu2 = data[1]
         vv1 = data[2]
@@ -78,7 +79,7 @@ class GPR(object):
         sigma_y = theta[2]
         phi = theta[3]
         
-        if tfp:
+        if self.tensor:
             a = tf.cos(phi)**2 / (2 * sigma_x**2) + tf.sin(phi)**2 / (2 * sigma_y**2)
             b = - tf.sin(2 * phi) / (4 * sigma_x**2) + tf.sin(2 * phi) / (4 * sigma_y**2)
             c = tf.sin(phi)**2 / (2 * sigma_x**2) + tf.cos(phi)**2 / (2 * sigma_y**2)
@@ -112,17 +113,17 @@ class GPR(object):
         
         return uu1, uu2, vv1, vv2
         
-    def gen_RBF_Covariance(self, theta, tfp):
+    def gen_EBF_Covariance(self, theta):
         """Generate relevant covariance matrices."""
         if self.verbose: print("Generating elliptical covariance function...")
         data = self.gen_coordinate_arrays(self.Xtrain, self.Xtrain)
-        self.K = self.EBF(data, theta, tfp)
+        self.K = self.EBF(data, theta, self.tensor)
         data = self.gen_coordinate_arrays(self.Xtest, self.Xtest)
-        self.Kss = self.EBF(data, theta, tfp)
+        self.Kss = self.EBF(data, theta, self.tensor)
         data = self.gen_coordinate_arrays(self.Xtest, self.Xtrain)
-        self.Ks = self.EBF(data, theta, tfp)
+        self.Ks = self.EBF(data, theta, self.tensor)
         
-    def train(self, tfp):
+    def train(self):
         if self.verbose: print("Solving for posterior...")
         t0 = time()
         # The following commented-out code solves for the posterior distribution but
@@ -134,7 +135,7 @@ class GPR(object):
         # self.V_s = self.Kss - (self.Ks.T).dot(KW_inv).dot(self.Ks)
         # self.sigma = np.sqrt(np.abs(np.diag(self.V_s)))
         
-        if tfp:
+        if self.tensor:
             self.L = tf.linalg.cholesky(self.K + self.W)
             self.alpha = tf.linalg.solve(tf.transpose(self.L), tf.linalg.solve(self.L, self.Ytrain))
             self.fbar_s = tf.tensordot(tf.transpose(self.Ks), self.alpha, axes=1)
@@ -153,11 +154,11 @@ class GPR(object):
         self.V_s = self.Kss - np.dot(self.v.T, self.v)
         self.sigma = np.sqrt(np.abs(np.diag(self.V_s)))
         t1 = time()
-        if self.verbose: print(f"Posterior found in {np.round(tf-t0, 3)} seconds.\n")
+        if self.verbose: print(f"Posterior found in {np.round(t1-t0, 3)} seconds.\n")
 
-    def fit(self, theta, tfp=False):
-        self.gen_RBF_Covariance(theta, tfp=tfp)
-        self.train(tfp=tfp)
+    def fit(self, theta):
+        self.gen_EBF_Covariance(theta)
+        self.train()
     
     def summary(self):
         print(f"Current Log Marginal Likelihood: {self.get_LML()}")
@@ -195,10 +196,10 @@ class GPR(object):
         dy = np.random.multivariate_normal(np.zeros(self.Xtest.shape[0]), self.Kss + self.Wss, size=size).T
         return dx, dy
     
-    def get_LML(self, tfp):
+    def get_LML(self):
         """Calculates the log marginal likelihood based on the current posterior predictive
         mean and the current posterior predictive variance."""
-        if tfp:
+        if self.tensor:
             LML_a = (-1/2) * tf.tensordot(self.Ytrain.T, self.alpha, axes=1)
             LML_b =  - tf.math.reduce_sum(tf.math.log(tf.linalg.tensor_diag(self.L)))
             LML_c =  - (self.Ytest.shape[0] / 2) * np.log(2 * np.pi)
