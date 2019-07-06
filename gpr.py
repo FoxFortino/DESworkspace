@@ -46,12 +46,15 @@ class GPR(object):
         if self.verbose: print("Splitting data into training and testing sets...")
         self.Xtrain, self.Xtest, self.Ytrain, self.Ytest, self.Etrain, self.Etest = \
             train_test_split(self.X, self.Y, self.E, test_size=self.test_size, random_state=self.random_state)
+        
+        self.nTrain = self.Xtrain.shape[0]
+        self.nTest = self.Xtest.shape[0]
     
     def gen_White_Covariance(self):
         """Generate white noise covariance matrix."""
         if self.verbose: print("Generating white noise covariance function...")
-        self.W = np.diag(self.Etrain) + self.eps * np.eye(self.Etrain.shape[0])
-        self.Wss = np.diag(self.Etest) + self.eps * np.eye(self.Etest.shape[0])
+        self.W = np.diag(self.Etrain) + self.eps * np.eye(self.nTrain)
+        self.Wss = np.diag(self.Etest) + self.eps * np.eye(self.nTest)
     
     def __init__(self, datafile, nExposure, sample=None, verbose=False, eps=1.49e-8, test_size=0.20, random_state=None, tensor=False):
         self.datafile = datafile        
@@ -143,7 +146,6 @@ class GPR(object):
             self.v = tf.linalg.solve(self.L, self.Ks)
             self.V_s = self.Kss - tf.tensordot(tf.transpose(self.v), self.v, axes=1)
             self.sigma = tf.math.sqrt(tf.math.abs(tf.linalg.tensor_diag(self.V_s)))
-
             return
         
         self.L = np.linalg.cholesky(self.K + self.W)
@@ -160,8 +162,9 @@ class GPR(object):
         self.gen_EBF_Covariance(theta)
         self.train()
     
-    def summary(self):
+    def summary(self, sigma=1):
         print(f"Current Log Marginal Likelihood: {self.get_LML()}")
+        self.check_error(sigma=sigma)
         self.get_std()
         self.plot_uv()
         self.plot_residuals()
@@ -192,8 +195,8 @@ class GPR(object):
     
     def draw_prior(self, size=1):
         """Draw from the prior distribution."""
-        dx = np.random.multivariate_normal(np.zeros(self.Xtest.shape[0]), self.Kss + self.Wss, size=size).T
-        dy = np.random.multivariate_normal(np.zeros(self.Xtest.shape[0]), self.Kss + self.Wss, size=size).T
+        dx = np.random.multivariate_normal(np.zeros(self.nTest), self.Kss + self.Wss, size=size).T
+        dy = np.random.multivariate_normal(np.zeros(self.nTest), self.Kss + self.Wss, size=size).T
         return dx, dy
     
     def get_LML(self):
@@ -202,13 +205,13 @@ class GPR(object):
         if self.tensor:
             LML_a = (-1/2) * tf.tensordot(self.Ytrain.T, self.alpha, axes=1)
             LML_b =  - tf.math.reduce_sum(tf.math.log(tf.linalg.tensor_diag(self.L)))
-            LML_c =  - (self.Ytest.shape[0] / 2) * np.log(2 * np.pi)
+            LML_c =  - (self.nTest / 2) * np.log(2 * np.pi)
             LML = tf.math.reduce_sum(tf.linalg.diag(LML_a + LML_b + LML_c))
             return LML
         
         LML_a = (-1/2) * np.dot(self.Ytrain.T, self.alpha)
         LML_b = - np.sum(np.log(np.diag(self.L)))
-        LML_c = -(self.Ytest.shape[0] / 2) * np.log(2 * np.pi)
+        LML_c = -(self.nTest / 2) * np.log(2 * np.pi)
         LML = np.sum(np.diag(LML_a + LML_b + LML_c))
 
         return LML
@@ -223,6 +226,13 @@ class GPR(object):
         print(f"Standard deviation of validation residuals: dx {np.round(std0_dx, 3)}, dy {np.round(std0_dy, 3)}")
         print(f"Standard deviation of Gaussian Process residuals: dx {np.round(stdf_dx, 3)}, dy {np.round(stdf_dy, 3)}")
         print(f"The ratio of std(valid) / std(GP): dx {np.round(improvement_dx, 3)}, dy {np.round(improvement_dy, 3)}")
+    
+    def check_error(self, sigma):
+        """Check what percentage of test points are within sigma standard deviations of the posterior predictive mean."""
+        within_x = np.sum((np.abs(self.Ytest[:, 0] - self.fbar_s[:, 0]) < sigma*self.sigma).astype(int))
+        within_y = np.sum((np.abs(self.Ytest[:, 0] - self.fbar_s[:, 0]) < sigma*self.sigma).astype(int))
+        print(f"Fraction of test points within {sigma} standard deviation(s) of posterior predictive mean:")
+        print(f"dx: {within_x / self.nTest}; dy: {within_y / self.nTest}")
               
     def plot_uv(self):
         plt.figure(figsize=(8, 8))
