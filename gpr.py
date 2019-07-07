@@ -213,7 +213,6 @@ class GPR(object):
         LML_b = - np.sum(np.log(np.diag(self.L)))
         LML_c = -(self.nTest / 2) * np.log(2 * np.pi)
         LML = np.sum(np.diag(LML_a + LML_b + LML_c))
-
         return LML
     
     def get_std(self):
