@@ -11,6 +11,13 @@ from sklearn.model_selection import train_test_split
 import forAustin as fa
 
 class GPR(object):
+    def gen_synthetic_data(self):
+        self.X  = self.rng.uniform(low=-1, high=1, size=(self.nSynth, 2))
+        data = self.gen_coordinate_arrays(self.X, self.X)
+        self.C = self.EBF(data, self.synth_params)
+        self.Y = self.rng.multivariate_normal(np.zeros(self.X.shape[0]), self.C, size=2).T
+        self.E = self.rng.uniform(low=2, high=3, size=self.nSynth)
+    
     def extract_exposure(self):
         """Extracts all data from a specified exposure (self.nExposure). Currently only supports extracting one exposure's worth of data."""
         if self.verbose: print("Extracting exposure from fits file...")
@@ -56,7 +63,7 @@ class GPR(object):
         self.W = np.diag(self.Etrain) + self.eps * np.eye(self.nTrain)
         self.Wss = np.diag(self.Etest) + self.eps * np.eye(self.nTest)
     
-    def __init__(self, datafile, nExposure, sample=None, verbose=False, eps=1.49e-8, test_size=0.20, random_state=None, tensor=False):
+    def __init__(self, datafile, nExposure, sample=None, verbose=False, eps=1.49e-8, test_size=0.20, random_state=None, tensor=False, synth=False, synth_params=None, nSynth=None):
         self.datafile = datafile        
         self.nExposure = nExposure
         self.sample = sample
@@ -64,10 +71,18 @@ class GPR(object):
         self.eps = eps
         self.test_size = test_size
         self.random_state = random_state
+        self.rng = np.random.RandomState(random_state)
         self.tensor = tensor
+        self.synth = synth
+        self.synth_params = synth_params
+        self.nSynth = nSynth
         
-        self.extract_exposure()
-        self.extract_data()
+        if self.synth:
+            self.gen_synthetic_data()
+        else:
+            self.extract_exposure()
+            self.extract_data()
+        
         self.split_data()
         self.gen_White_Covariance()
     
@@ -189,14 +204,14 @@ class GPR(object):
     
     def draw_posterior(self, size=1):
         """Draw from the posterior distribution."""
-        dx = np.random.multivariate_normal(self.fbar_s[:, 0], self.V_s, size=size).T
-        dy = np.random.multivariate_normal(self.fbar_s[:, 1], self.V_s, size=size).T
+        dx = self.rng.multivariate_normal(self.fbar_s[:, 0], self.V_s, size=size).T
+        dy = self.rng.multivariate_normal(self.fbar_s[:, 1], self.V_s, size=size).T
         return dx, dy
     
     def draw_prior(self, size=1):
         """Draw from the prior distribution."""
-        dx = np.random.multivariate_normal(np.zeros(self.nTest), self.Kss + self.Wss, size=size).T
-        dy = np.random.multivariate_normal(np.zeros(self.nTest), self.Kss + self.Wss, size=size).T
+        dx = self.rng.multivariate_normal(np.zeros(self.nTest), self.Kss + self.Wss, size=size).T
+        dy = self.rng.multivariate_normal(np.zeros(self.nTest), self.Kss + self.Wss, size=size).T
         return dx, dy
     
     def get_LML(self):
