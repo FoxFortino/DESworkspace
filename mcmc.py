@@ -40,7 +40,7 @@ class MCMC(object):
         while np.any(theta_new[:3] <= 0): # Make sure that first three parameters never go below zero
             theta_new =  self.rng.normal(loc=self.theta, scale=self.step_size, size=self.nParams)
         
-        nll_new = self.nll_fn(self.data, theta_new)
+        nll_new = self.nll_fn(theta_new, self.data)
         acceptance_probability = np.min((1, np.exp(nll_new - self.current_nll)))
         random_acceptance_probability = self.rng.uniform()
         
