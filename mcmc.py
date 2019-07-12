@@ -31,7 +31,7 @@ class MCMC(object):
         self.rng = np.random.RandomState(seed)
         
         self.nParams = self.theta.shape[0]
-        self.current_nll = nll_fn(self.data, self.theta)
+        self.current_nll = nll_fn(self.theta, self.data)
         self.nAccept = 0
         self.samples = []
 
