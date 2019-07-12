@@ -10,7 +10,7 @@ import forAustin as fa
 import gpr
 
 class MCMC(object):
-    def __init__(self, nll_fn, data, theta, step_size, names=None, seed=314159):
+    def __init__(self, nll_fn, data, theta, step_size, bounds=None, names=None, seed=314159):
         """Markov Chain Monte Carlo Metropolis Hastings Algorithm.
         
         Parameters
@@ -34,10 +34,13 @@ class MCMC(object):
         self.current_nll = nll_fn(self.theta, self.data)
         self.nAccept = 0
         self.samples = []
+        
+        if bounds is None:
+            bounds = np.array([(-np.inf, np.inf)] * 4)
 
     def step(self, save=True):
         theta_new =  self.rng.normal(loc=self.theta, scale=self.step_size, size=self.nParams)
-        while np.any(theta_new[:3] <= 0): # Make sure that first three parameters never go below zero
+        while np.all(np.array([param > bound[0] and param < bound[1] for param, bound in zip(theta, bounds)])):
             theta_new =  self.rng.normal(loc=self.theta, scale=self.step_size, size=self.nParams)
         
         nll_new = self.nll_fn(theta_new, self.data)
