@@ -37,6 +37,7 @@ class GPR(object):
         
         # Extract only data in a certain region of the exposure as specified by self.sample.
         if self.sample is not None:
+            assert self.sample.shape[0] == 4, f"Shape of sample is not 4 (x1, x2, y1, y2), instead it's: {self.sample.shape}"
             ind_u = np.logical_and(u >= self.sample[0], u <= self.sample[1])
             ind_v = np.logical_and(v >= self.sample[2], v <= self.sample[3])
             ind_sample = np.where(np.logical_and(ind_u, ind_v))[0]
@@ -60,8 +61,8 @@ class GPR(object):
     def gen_White_Covariance(self):
         """Generate white noise covariance matrix."""
         if self.verbose: print("Generating white noise covariance function...")
-        self.W = np.diag(self.Etrain) + self.eps * np.eye(self.nTrain)
-        self.Wss = np.diag(self.Etest) + self.eps * np.eye(self.nTest)
+        self.W = np.diag(self.Etrain**2) + self.eps * np.eye(self.nTrain)
+        self.Wss = np.diag(self.Etest**2) + self.eps * np.eye(self.nTest)
     
     def __init__(self, datafile, nExposure, sample=None, verbose=False, eps=1.49e-8, test_size=0.20, random_state=None, tensor=False, synth=False, synth_params=None, nSynth=None):
         self.datafile = datafile        
@@ -180,7 +181,6 @@ class GPR(object):
     def summary(self, sigma=1):
         print(f"Current Log Marginal Likelihood: {self.get_LML()}")
         self.check_error(sigma=sigma)
-        self.get_std()
         self.plot_uv()
         self.plot_residuals()
         self.plot_closeup()
@@ -229,17 +229,6 @@ class GPR(object):
         LML_c = -(self.nTest / 2) * np.log(2 * np.pi)
         LML = np.sum(np.diag(LML_a + LML_b + LML_c))
         return LML
-    
-    def get_std(self):
-        std0_dx = np.std(self.Ytest[:, 0])
-        std0_dy = np.std(self.Ytest[:, 1])
-        stdf_dx = np.std(self.fbar_s[:, 0])
-        stdf_dy = np.std(self.fbar_s[:, 1])
-        improvement_dx = std0_dx / stdf_dx
-        improvement_dy = std0_dy / stdf_dy
-        print(f"Standard deviation of validation residuals: dx {np.round(std0_dx, 3)}, dy {np.round(std0_dy, 3)}")
-        print(f"Standard deviation of Gaussian Process residuals: dx {np.round(stdf_dx, 3)}, dy {np.round(stdf_dy, 3)}")
-        print(f"The ratio of std(valid) / std(GP): dx {np.round(improvement_dx, 3)}, dy {np.round(improvement_dy, 3)}")
     
     def check_error(self, sigma):
         """Check what percentage of test points are within sigma standard deviations of the posterior predictive mean."""
