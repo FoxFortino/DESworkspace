@@ -36,11 +36,13 @@ class MCMC(object):
         self.samples = []
         
         if bounds is None:
-            bounds = np.array([(-np.inf, np.inf)] * 4)
+            self.bounds = np.array([(-np.inf, np.inf)] * 4)
+        else:
+            self.bounds = bounds
 
     def step(self, save=True):
         theta_new =  self.rng.normal(loc=self.theta, scale=self.step_size, size=self.nParams)
-        while np.all(np.array([param > bound[0] and param < bound[1] for param, bound in zip(theta, bounds)])):
+        while np.all(np.array([param > bound[0] and param < bound[1] for param, bound in zip(self.theta, self.bounds)])):
             theta_new =  self.rng.normal(loc=self.theta, scale=self.step_size, size=self.nParams)
         
         nll_new = self.nll_fn(theta_new, self.data)
