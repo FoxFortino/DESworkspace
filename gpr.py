@@ -1,14 +1,9 @@
-from time import time
+import forAustin as fa
+
 import numpy as np
-import tensorflow as tf
-import tensorflow_probability as tfp
-import astropy.units as u
-import astropy.constants as c
 import astropy.io.fits as pf
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
-
-import forAustin as fa
 
 class GPR(object):
     
