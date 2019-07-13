@@ -1,5 +1,6 @@
 import forAustin as fa
 
+from time import time
 import numpy as np
 import tensorflow as tf
 import astropy.io.fits as pf
@@ -38,17 +39,22 @@ class GPR(object):
         
         return uu1, uu2, vv1, vv2
     
-    def extract_exposure(self, datafile, nExposure, polyOrder=3, sample=None, verbose=False):
+    def extract_exposure(self, datafile='/data4/paper/fox/DES/austinFull.fits', nExposure=500, polyOrder=3, verbose=False):
         """Extracts all data from a specified exposure (self.nExposure). Currently only supports extracting one exposure's worth of data."""
-        if verbose or self.verbose: print(f"Extracting exposure data from fits file from exposure {nExposure}...")
+        if verbose or self.verbose: print("Extracting fits file...")
         
         self.datafile = datafile
         self.nExposure = nExposure
-        self.sample = sample
         
         self.fits = pf.open(self.datafile)
         self.exposure = fa.getExposure(self.fits, self.nExposure, polyOrder=polyOrder)
         if verbose or self.verbose: self.fits.info(); print()
+        
+    def extract_data(self, sample, verbose=False):
+        """Extracts u, v, dx, dy, and measErr columns from all data points where hasGaia is True."""
+        if verbose or self.verbose: print(f"Extracting data from exposure {self.nExposure}...")
+            
+        self.sample = sample
         
         ind_hasGaia = np.where(self.exposure['hasGaia'])[0]
         u = np.take(self.exposure['u'], ind_hasGaia)
@@ -73,20 +79,23 @@ class GPR(object):
         self.Y = np.vstack((dx, dy)).T
         self.E = E
         
-    def remove_outliers(self, sigma, verbose=False):
+    def remove_outliers(self, sigma, plot=True, verbose=False):
         """Removes data points that have residuals greater than sigma standard deviations from the mean."""
         if verbose or self.verbose: print(f"Removing data points that have residuals greater than {sigma} standard deviations from the mean...")
         
         self.sigma = sigma
+        
+        if plot:
+            self.plot_hist(fits_only=True)
         
         percentile = lambda x, sigma: np.mean(x) + sigma * np.array([-np.std(x), np.std(x)])
         perc_dx = percentile(self.Y[:, 0], self.sigma)
         perc_dy = percentile(self.Y[:, 1], self.sigma)
 
         ind_dx = np.logical_and(self.Y[:, 0] > perc_dx[0], self.Y[:, 0] < perc_dx[1])
-        ind_dy = np.logical_and(self.Y[:, 0] > perc_dy[0], self.Y[:, 1] < perc_dy[1])
+        ind_dy = np.logical_and(self.Y[:, 1] > perc_dy[0], self.Y[:, 1] < perc_dy[1])
         ind = np.where(np.logical_and(ind_dx, ind_dy))[0]
-        if verbose or self.verbose: print(f"{np.round(ind.shape[0] / self.Y.shape[0] * 100, 4)}% of data points are being kept.")
+        if verbose or self.verbose: print(f"{np.round(ind.shape[0] / self.Y.shape[0] * 100, 4)}% of {ind.shape[0]} data points are being kept.")
 
         u = np.take(self.X[:, 0], ind, axis=0)
         v = np.take(self.X[:, 1], ind, axis=0)
@@ -97,6 +106,9 @@ class GPR(object):
         self.X = np.vstack((u, v)).T
         self.Y = np.vstack((dx, dy)).T
         self.E = E
+        
+        if plot:
+            self.plot_hist(fits_only=True)
         
     def split_data(self, test_size, verbose=False):
         """Separate data into training and testing sets with sklearn.model_selection.train_test_split."""
@@ -146,7 +158,7 @@ class GPR(object):
         self.Ks = self.EBF(theta, self.Xtest, self.Xtrain)
         
         if verbose or self.verbose: print("Solving for posterior...")
-        
+        t0 = time()
         if self.tensor:
             self.L = tf.linalg.cholesky(self.K + self.W)
             self.alpha = tf.linalg.solve(tf.transpose(self.L), tf.linalg.solve(self.L, self.Ytrain))
@@ -156,7 +168,12 @@ class GPR(object):
             self.V_s = self.Kss - tf.tensordot(tf.transpose(self.v), self.v, axes=1)
             self.sigma = tf.math.sqrt(tf.math.abs(tf.linalg.tensor_diag(self.V_s)))
             
-            self.nLML = tf.math.reduce_sum(tf.linalg.diag((-1/2) * tf.tensordot(self.Ytrain.T, self.alpha, axes=1) - tf.math.reduce_sum(tf.math.log(tf.linalg.tensor_diag(self.L))) - (self.nTest / 2) * np.log(2 * np.pi)))
+            nLML_1 = (-1/2) * tf.tensordot(self.Ytrain.T, self.alpha, axes=1)
+            nLML_2 =  - tf.math.reduce_sum(tf.math.log(tf.linalg.tensor_diag_part(self.L)))
+            nLML_3 =  - (self.nTest / 2) * np.log(2 * np.pi)
+            self.nLML = tf.math.reduce_sum(tf.linalg.tensor_diag_part(nLML_1 + nLML_2 + nLML_3), keepdims=True)
+            t1 = time()
+            if verbose or self.verbose: print(f"Posterior solved for in {t1-t0} seconds.")
             return
         
         self.L = np.linalg.cholesky(self.K + self.W)
@@ -168,15 +185,12 @@ class GPR(object):
         self.sigma = np.sqrt(np.abs(np.diag(self.V_s)))
         
         self.nLML = np.sum(np.diag((-1/2) * np.dot(self.Ytrain.T, self.alpha) - np.sum(np.log(np.diag(self.L))) - (self.nTest / 2) * np.log(2 * np.pi)))
-    
-    def get_nLML(self, factor=-1):
-        """Returns negative log marginal likelihood. Use positive=True for when using a minimizing function."""
-        if self.tensor:
-            return tf.compat.v1.Session().run(factor * self.nLML)
-        return factor * self.nLML
+        
+        t1 = time()
+        if verbose or self.verbose: print(f"Posterior solved for in {t1-t0} seconds.")
     
     def summary(self, sigma=1):
-        print(f"Current Log Marginal Likelihood: {self.get_nLML()}")
+        print(f"Current Log Marginal Likelihood: {self.nLML}")
         self.check_error(sigma=sigma)
         self.chisq()
         self.plot_uv()
@@ -196,8 +210,7 @@ class GPR(object):
         
     def chisq(self):
         chisq = np.sum((self.Ytest - self.fbar_s)**2, axis=0)
-        print(f"Chisq dx: {chisq[0]}")
-        print(f"Chisq d1: {chisq[1]}")
+        print(f"Chisq dx: {chisq[0]}; Chisq dy: {chisq[1]}")
               
     def plot_uv(self):
         plt.figure(figsize=(8, 8))
@@ -261,14 +274,15 @@ class GPR(object):
         plt.scatter(self.Ytest[:, 0] - self.fbar_s[:, 0], self.Ytest[:, 1] - self.fbar_s[:, 1], alpha=0.5)
         plt.show()
     
-    def plot_hist(self):
+    def plot_hist(self, fits_only=False):
         plt.figure(figsize=(8, 8))
         plt.title("Histogram of Residuals (dx, dy)")
         plt.xlabel("Value (mas)")
         plt.ylabel("Probability")
         plt.hist(self.Y[:, 0], bins=50, histtype='step', density=True, label="dx")
         plt.hist(self.Y[:, 1], bins=50, histtype='step', density=True, label="dy")
-        plt.hist(self.fbar_s[:, 0], bins=50, histtype='step', density=True, label="dx from GP")
-        plt.hist(self.fbar_s[:, 1], bins=50, histtype='step', density=True, label="dy from GP")
+        if not fits_only:
+            plt.hist(self.fbar_s[:, 0], bins=50, histtype='step', density=True, label="dx from GP")
+            plt.hist(self.fbar_s[:, 1], bins=50, histtype='step', density=True, label="dy from GP")
         plt.legend()
         plt.show()
