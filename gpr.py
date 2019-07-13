@@ -11,105 +11,128 @@ from sklearn.model_selection import train_test_split
 import forAustin as fa
 
 class GPR(object):
-    def gen_synthetic_data(self):
+    
+    def __init__(self, verbose=False, random_state=None, tensor=None):
+        """Gaussian Process Regression."""
+        self.verbose = verbose
+        self.random_state = random_state
+        self.rng = np.random.RandomState(random_state)
+        
+        self.tensor = tensor
+
+    def gen_synthetic_data(self, nSynth, thetaS, verbose=False):
+        """Generates nSynth synthetic data points on a 4 deg^2 sky with kernel parameters given by thetaS."""
+        if verbose or self.verbose: print("Generating synthetic data...")
+            
+        self.nSynth = nSynth
+        self.thetaS = thetaS
+        
         self.X  = self.rng.uniform(low=-1, high=1, size=(self.nSynth, 2))
-        data = self.gen_coordinate_arrays(self.X, self.X)
-        self.C = self.EBF(data, self.synth_params)
+        
+        self.C = self.EBF(self.thetaS, self.X, self.X)
         self.Y = self.rng.multivariate_normal(np.zeros(self.X.shape[0]), self.C, size=2).T
-        self.E = self.rng.uniform(low=2, high=3, size=self.nSynth)
+        self.E = np.abs(self.rng.normal(loc=0, scale=1, size=self.nSynth))
+        
+    def gen_2Dcoordinate_arrays(self, X1, X2):
+        """Helper function to generate coordinate arrays for vectorized evaluation of the elliptical kernel."""
+        
+        u1, u2 = X1[:, 0], X2[:, 0]
+        v1, v2 = X1[:, 1], X2[:, 1]
+        
+        uu1, uu2 = np.meshgrid(u1, u2)
+        vv1, vv2 = np.meshgrid(v1, v2)
+        
+        return uu1, uu2, vv1, vv2
     
-    def extract_exposure(self):
+    def extract_exposure(self, datafile, nExposure, polyOrder=3, sample=None, verbose=False):
         """Extracts all data from a specified exposure (self.nExposure). Currently only supports extracting one exposure's worth of data."""
-        if self.verbose: print("Extracting exposure from fits file...")
+        if verbose or self.verbose: print(f"Extracting exposure data from fits file from exposure {nExposure}...")
+        
+        self.datafile = datafile
+        self.nExposure = nExposure
+        self.sample = sample
+        
         self.fits = pf.open(self.datafile)
-        if self.verbose: self.fits.info(); print()
-        self.exposure = fa.getExposure(self.fits, self.nExposure, polyOrder=3)
-    
-    def extract_data(self):
-        """Extract star positions, residuals, and measurement error from one exposure."""
-        if self.verbose: print("Extracting exposure data...")
+        self.exposure = fa.getExposure(self.fits, self.nExposure, polyOrder=polyOrder)
+        if verbose or self.verbose: self.fits.info(); print()
+        
         ind_hasGaia = np.where(self.exposure['hasGaia'])[0]
         u = np.take(self.exposure['u'], ind_hasGaia)
         v = np.take(self.exposure['v'], ind_hasGaia)
         dx = np.take(self.exposure['dx'], ind_hasGaia)
         dy = np.take(self.exposure['dy'], ind_hasGaia)
-        self.E = np.take(self.exposure['measErr'], ind_hasGaia)
+        E = np.take(self.exposure['measErr'], ind_hasGaia)
         
         # Extract only data in a certain region of the exposure as specified by self.sample.
         if self.sample is not None:
-            assert self.sample.shape[0] == 4, f"Shape of sample is not 4 (x1, x2, y1, y2), instead it's: {self.sample.shape}"
+            assert self.sample.shape == (4,), f"Shape of sample is {self.sample.shape}, but must be (4,)."
             ind_u = np.logical_and(u >= self.sample[0], u <= self.sample[1])
             ind_v = np.logical_and(v >= self.sample[2], v <= self.sample[3])
-            ind_sample = np.where(np.logical_and(ind_u, ind_v))[0]
-            u = np.take(u, ind_sample, axis=0)
-            v = np.take(v, ind_sample, axis=0)
-            dx = np.take(dx, ind_sample, axis=0)
-            dy = np.take(dy, ind_sample, axis=0)
-            self.E = np.take(self.E, ind_sample)
+            ind = np.where(np.logical_and(ind_u, ind_v))[0]
+            u = np.take(u, ind, axis=0)
+            v = np.take(v, ind, axis=0)
+            dx = np.take(dx, ind, axis=0)
+            dy = np.take(dy, ind, axis=0)
+            E = np.take(E, ind)
+            
         self.X = np.vstack((u, v)).T
         self.Y = np.vstack((dx, dy)).T
+        self.E = E
         
-    def split_data(self):
-        """Separate data into training and testing sets with sklearn."""
-        if self.verbose: print("Splitting data into training and testing sets...")
+    def remove_outliers(self, sigma, verbose=False):
+        """Removes data points that have residuals greater than sigma standard deviations from the mean."""
+        if verbose or self.verbose: print(f"Removing data points that have residuals greater than {sigma} standard deviations from the mean...")
+        
+        self.sigma = sigma
+        
+        percentile = lambda x, sigma: np.mean(x) + sigma * np.array([-np.std(x), np.std(x)])
+        perc_dx = percentile(self.Y[:, 0], self.sigma)
+        perc_dy = percentile(self.Y[:, 1], self.sigma)
+
+        ind_dx = np.logical_and(self.Y[:, 0] > perc_dx[0], self.Y[:, 0] < perc_dx[1])
+        ind_dy = np.logical_and(self.Y[:, 0] > perc_dy[0], self.Y[:, 1] < perc_dy[1])
+        ind = np.where(np.logical_and(ind_dx, ind_dy))[0]
+        if verbose or self.verbose: print(f"{np.round(ind.shape[0] / self.Y.shape[0] * 100, 4)}% of data points are being kept.")
+
+        u = np.take(self.X[:, 0], ind, axis=0)
+        v = np.take(self.X[:, 1], ind, axis=0)
+        dx = np.take(self.Y[:, 0], ind, axis=0)
+        dy = np.take(self.Y[:, 1], ind, axis=0)
+        E = np.take(self.E, ind, axis=0)
+        
+        self.X = np.vstack((u, v)).T
+        self.Y = np.vstack((dx, dy)).T
+        self.E = E
+        
+    def split_data(self, test_size, verbose=False):
+        """Separate data into training and testing sets with sklearn.model_selection.train_test_split."""
+        if verbose or self.verbose: print("Splitting data into training and testing sets...")
+        
         self.Xtrain, self.Xtest, self.Ytrain, self.Ytest, self.Etrain, self.Etest = \
-            train_test_split(self.X, self.Y, self.E, test_size=self.test_size, random_state=self.random_state)
+            train_test_split(self.X, self.Y, self.E, test_size=test_size, random_state=self.random_state)
         
         self.nTrain = self.Xtrain.shape[0]
         self.nTest = self.Xtest.shape[0]
     
-    def gen_White_Covariance(self):
+    def white_cov(self, eps=1.49e-8, verbose=False):
         """Generate white noise covariance matrix."""
-        if self.verbose: print("Generating white noise covariance function...")
+        if verbose or self.verbose: print("Generating white noise covariance function...")
+            
+        self.eps = eps
+        
         self.W = np.diag(self.Etrain**2) + self.eps * np.eye(self.nTrain)
         self.Wss = np.diag(self.Etest**2) + self.eps * np.eye(self.nTest)
     
-    def __init__(self, datafile, nExposure, sample=None, verbose=False, eps=1.49e-8, test_size=0.20, random_state=None, tensor=False, synth=False, synth_params=None, nSynth=None):
-        self.datafile = datafile        
-        self.nExposure = nExposure
-        self.sample = sample
-        self.verbose = verbose
-        self.eps = eps
-        self.test_size = test_size
-        self.random_state = random_state
-        self.rng = np.random.RandomState(random_state)
-        self.tensor = tensor
-        self.synth = synth
-        self.synth_params = synth_params
-        self.nSynth = nSynth
+    def EBF(self, theta, X1, X2):
+        """Vectorized solution for computing the elliptical kernel."""
+
+        var_s, sigma_x, sigma_y, phi = theta
         
-        if self.synth:
-            self.gen_synthetic_data()
-        else:
-            self.extract_exposure()
-            self.extract_data()
+        u1, u2 = X1[:, 0], X2[:, 0]
+        v1, v2 = X1[:, 1], X2[:, 1]
         
-        self.split_data()
-        self.gen_White_Covariance()
-    
-    def EBF(self, data, theta):
-        uu1 = data[0]
-        uu2 = data[1]
-        vv1 = data[2]
-        vv2 = data[3]
-        
-        var_s = theta[0]
-        sigma_x = theta[1]
-        sigma_y = theta[2]
-        phi = theta[3]
-        
-        if self.tensor:
-            a = tf.cos(phi)**2 / (2 * sigma_x**2) + tf.sin(phi)**2 / (2 * sigma_y**2)
-            b = - tf.sin(2 * phi) / (4 * sigma_x**2) + tf.sin(2 * phi) / (4 * sigma_y**2)
-            c = tf.sin(phi)**2 / (2 * sigma_x**2) + tf.cos(phi)**2 / (2 * sigma_y**2)
-           
-            uu = a * (uu1 - uu2)**2
-            vv = c * (vv1 - vv2)**2
-            uv = 2 * b * (uu1 - uu2)*(vv1 - vv2)
-            
-            K = var_s * tf.exp(-(uu + vv + uv))
-            
-            return K
+        uu1, uu2 = np.meshgrid(u1, u2)
+        vv1, vv2 = np.meshgrid(v1, v2)
 
         a = np.cos(phi)**2 / (2 * sigma_x**2) + np.sin(phi)**2 / (2 * sigma_y**2)
         b = - np.sin(2 * phi) / (4 * sigma_x**2) + np.sin(2 * phi) / (4 * sigma_y**2)
@@ -119,51 +142,16 @@ class GPR(object):
         vv = c * (vv1 - vv2)**2
         uv = 2 * b * (uu1 - uu2)*(vv1 - vv2)
         
-        K = var_s * np.exp(-(uu + vv + uv))
-    
-        return K
-    
-    def gen_coordinate_arrays(self, X, Y):
-        u1, u2 = X[:, 0], Y[:, 0]
-        v1, v2 = X[:, 1], Y[:, 1]
+        return var_s * np.exp(-(uu + vv + uv))
         
-        uu1, uu2 = np.meshgrid(u1, u2)
-        vv1, vv2 = np.meshgrid(v1, v2)
+    def fit(self, theta, verbose=False):
+        """Solves the posterior predictive mean"""
+        if verbose or self.verbose: print("Generating elliptical covariance function...")
+        self.K = self.EBF(theta, self.Xtrain, self.Xtrain)
+        self.Kss = self.EBF(theta, self.Xtest, self.Xtest)
+        self.Ks = self.EBF(theta, self.Xtest, self.Xtrain)
         
-        return uu1, uu2, vv1, vv2
-        
-    def gen_EBF_Covariance(self, theta):
-        """Generate relevant covariance matrices."""
-        if self.verbose: print("Generating elliptical covariance function...")
-        data = self.gen_coordinate_arrays(self.Xtrain, self.Xtrain)
-        self.K = self.EBF(data, theta)
-        data = self.gen_coordinate_arrays(self.Xtest, self.Xtest)
-        self.Kss = self.EBF(data, theta)
-        data = self.gen_coordinate_arrays(self.Xtest, self.Xtrain)
-        self.Ks = self.EBF(data, theta)
-        
-    def train(self):
-        if self.verbose: print("Solving for posterior...")
-        t0 = time()
-        # The following commented-out code solves for the posterior distribution but
-        # does not involve cholesky decomposition (it simply uses np.linalg.inv) and is therefore
-        # computationally slower than the following block of code that does use np.linalg.cholesky
-        # (and by extension, it also uses np.linalg.solve.).
-        # KW_inv = np.linalg.inv(self.K + self.W)
-        # self.fbar_s = (self.Ks.T).dot(KW_inv).dot(self.Ytrain)
-        # self.V_s = self.Kss - (self.Ks.T).dot(KW_inv).dot(self.Ks)
-        # self.sigma = np.sqrt(np.abs(np.diag(self.V_s)))
-        
-        if self.tensor:
-            self.L = tf.linalg.cholesky(self.K + self.W)
-            self.alpha = tf.linalg.solve(tf.transpose(self.L), tf.linalg.solve(self.L, self.Ytrain))
-            self.fbar_s = tf.tensordot(tf.transpose(self.Ks), self.alpha, axes=1)
-
-            self.v = tf.linalg.solve(self.L, self.Ks)
-            self.V_s = self.Kss - tf.tensordot(tf.transpose(self.v), self.v, axes=1)
-            self.sigma = tf.math.sqrt(tf.math.abs(tf.linalg.tensor_diag(self.V_s)))
-            return
-        
+        if verbose or self.verbose: print("Solving for posterior...")
         self.L = np.linalg.cholesky(self.K + self.W)
         self.alpha = np.linalg.solve(self.L.T, np.linalg.solve(self.L, self.Ytrain))
         self.fbar_s = np.dot(self.Ks.T, self.alpha)
@@ -171,64 +159,27 @@ class GPR(object):
         self.v = np.linalg.solve(self.L, self.Ks)
         self.V_s = self.Kss - np.dot(self.v.T, self.v)
         self.sigma = np.sqrt(np.abs(np.diag(self.V_s)))
-        t1 = time()
-        if self.verbose: print(f"Posterior found in {np.round(t1-t0, 3)} seconds.\n")
-
-    def fit(self, theta):
-        self.gen_EBF_Covariance(theta)
-        self.train()
+        
+        self.nLML = np.sum(np.diag((-1/2) * np.dot(self.Ytrain.T, self.alpha) - np.sum(np.log(np.diag(self.L))) - (self.nTest / 2) * np.log(2 * np.pi)))
+    
+    def get_nLML(self, positive=False):
+        """Returns negative log marginal likelihood. Use positive=True for when using a minimizing function."""
+        if positive:
+            return -self.nLML
+        else:
+            return self.nLML
     
     def summary(self, sigma=1):
-        print(f"Current Log Marginal Likelihood: {self.get_LML()}")
+        print(f"Current Log Marginal Likelihood: {self.get_nLML()}")
         self.check_error(sigma=sigma)
+        self.chisq()
         self.plot_uv()
         self.plot_residuals()
         self.plot_closeup()
         self.plot_quiver_GP()
         self.plot_quiver_fits()
         self.plot_resres()
-        
-    def convert2numpy(self):
-        """Converts posterior solution from tensorflow tensors to numpy arrays."""
-        self.L = tf.Session().run(self.L)
-        self.alpha = tf.Session().run(self.alpha)
-        self.fbar_s = tf.Session().run(self.fbar_s)
-        
-        self.v = tf.Session().run(self.v)
-        self.V_s = tf.Session().run(self.V_s)
-        self.sigma = tf.Session().run(self.sigma)
-        
-        self.K = tf.Session().run(self.K)
-        self.Ks = tf.Session().run(self.Ks)
-        self.Kss = tf.Session().run(self.Kss)
-    
-    def draw_posterior(self, size=1):
-        """Draw from the posterior distribution."""
-        dx = self.rng.multivariate_normal(self.fbar_s[:, 0], self.V_s, size=size).T
-        dy = self.rng.multivariate_normal(self.fbar_s[:, 1], self.V_s, size=size).T
-        return dx, dy
-    
-    def draw_prior(self, size=1):
-        """Draw from the prior distribution."""
-        dx = self.rng.multivariate_normal(np.zeros(self.nTest), self.Kss + self.Wss, size=size).T
-        dy = self.rng.multivariate_normal(np.zeros(self.nTest), self.Kss + self.Wss, size=size).T
-        return dx, dy
-    
-    def get_LML(self):
-        """Calculates the log marginal likelihood based on the current posterior predictive
-        mean and the current posterior predictive variance."""
-        if self.tensor:
-            LML_a = (-1/2) * tf.tensordot(self.Ytrain.T, self.alpha, axes=1)
-            LML_b =  - tf.math.reduce_sum(tf.math.log(tf.linalg.tensor_diag(self.L)))
-            LML_c =  - (self.nTest / 2) * np.log(2 * np.pi)
-            LML = tf.math.reduce_sum(tf.linalg.diag(LML_a + LML_b + LML_c))
-            return LML
-        
-        LML_a = (-1/2) * np.dot(self.Ytrain.T, self.alpha)
-        LML_b = - np.sum(np.log(np.diag(self.L)))
-        LML_c = -(self.nTest / 2) * np.log(2 * np.pi)
-        LML = np.sum(np.diag(LML_a + LML_b + LML_c))
-        return LML
+        self.plot_hist()
     
     def check_error(self, sigma):
         """Check what percentage of test points are within sigma standard deviations of the posterior predictive mean."""
@@ -236,6 +187,11 @@ class GPR(object):
         within_y = np.sum((np.abs(self.Ytest[:, 0] - self.fbar_s[:, 0]) < sigma*self.sigma).astype(int))
         print(f"Fraction of test points within {sigma} standard deviation(s) of posterior predictive mean:")
         print(f"dx: {within_x / self.nTest}; dy: {within_y / self.nTest}")
+        
+    def chisq(self):
+        chisq = np.sum((self.Ytest - self.fbar_s)**2, axis=0)
+        print(f"Chisq dx: {chisq[0]}")
+        print(f"Chisq d1: {chisq[1]}")
               
     def plot_uv(self):
         plt.figure(figsize=(8, 8))
@@ -294,7 +250,19 @@ class GPR(object):
         plt.title(f"Test Set Residuals (given by fits file) Subtracted by Estimated Residuals (given by GP).")
         plt.xlabel("dx (mas)")
         plt.ylabel("dy (mas)")
-        plt.xlim((-100, 100))
-        plt.ylim((-100, 100))
+#         plt.xlim((-100, 100))
+#         plt.ylim((-100, 100))
         plt.scatter(self.Ytest[:, 0] - self.fbar_s[:, 0], self.Ytest[:, 1] - self.fbar_s[:, 1], alpha=0.5)
+        plt.show()
+    
+    def plot_hist(self):
+        plt.figure(figsize=(8, 8))
+        plt.title("Histogram of Residuals (dx, dy)")
+        plt.xlabel("Value (mas)")
+        plt.ylabel("Probability")
+        plt.hist(self.Y[:, 0], bins=50, histtype='step', density=True, label="dx")
+        plt.hist(self.Y[:, 1], bins=50, histtype='step', density=True, label="dy")
+        plt.hist(self.fbar_s[:, 0], bins=50, histtype='step', density=True, label="dx from GP")
+        plt.hist(self.fbar_s[:, 1], bins=50, histtype='step', density=True, label="dy from GP")
+        plt.legend()
         plt.show()
