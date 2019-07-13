@@ -1,18 +1,17 @@
 import forAustin as fa
 
 import numpy as np
+import tensorflow as tf
 import astropy.io.fits as pf
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 
 class GPR(object):
-    
     def __init__(self, verbose=False, random_state=None, tensor=None):
         """Gaussian Process Regression."""
         self.verbose = verbose
         self.random_state = random_state
         self.rng = np.random.RandomState(random_state)
-        
         self.tensor = tensor
 
     def gen_synthetic_data(self, nSynth, thetaS, verbose=False):
@@ -147,6 +146,19 @@ class GPR(object):
         self.Ks = self.EBF(theta, self.Xtest, self.Xtrain)
         
         if verbose or self.verbose: print("Solving for posterior...")
+        
+        if self.tensor:
+            self.L = tf.linalg.cholesky(self.K + self.W)
+            self.alpha = tf.linalg.solve(tf.transpose(self.L), tf.linalg.solve(self.L, self.Ytrain))
+            self.fbar_s = tf.tensordot(tf.transpose(self.Ks), self.alpha, axes=1)
+
+            self.v = tf.linalg.solve(self.L, self.Ks)
+            self.V_s = self.Kss - tf.tensordot(tf.transpose(self.v), self.v, axes=1)
+            self.sigma = tf.math.sqrt(tf.math.abs(tf.linalg.tensor_diag(self.V_s)))
+            
+            self.nLML = tf.math.reduce_sum(tf.linalg.diag((-1/2) * tf.tensordot(self.Ytrain.T, self.alpha, axes=1) - tf.math.reduce_sum(tf.math.log(tf.linalg.tensor_diag(self.L))) - (self.nTest / 2) * np.log(2 * np.pi)))
+            return
+        
         self.L = np.linalg.cholesky(self.K + self.W)
         self.alpha = np.linalg.solve(self.L.T, np.linalg.solve(self.L, self.Ytrain))
         self.fbar_s = np.dot(self.Ks.T, self.alpha)
@@ -157,12 +169,11 @@ class GPR(object):
         
         self.nLML = np.sum(np.diag((-1/2) * np.dot(self.Ytrain.T, self.alpha) - np.sum(np.log(np.diag(self.L))) - (self.nTest / 2) * np.log(2 * np.pi)))
     
-    def get_nLML(self, positive=False):
+    def get_nLML(self, factor=-1):
         """Returns negative log marginal likelihood. Use positive=True for when using a minimizing function."""
-        if positive:
-            return -self.nLML
-        else:
-            return self.nLML
+        if self.tensor:
+            return tf.compat.v1.Session().run(factor * self.nLML)
+        return factor * self.nLML
     
     def summary(self, sigma=1):
         print(f"Current Log Marginal Likelihood: {self.get_nLML()}")
