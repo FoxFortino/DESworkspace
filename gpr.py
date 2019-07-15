@@ -3,14 +3,20 @@ import forAustin as fa
 from time import time
 import numpy as np
 import tensorflow as tf
+import astropy.units as u
+import astropy.constants as c
 import astropy.io.fits as pf
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 
 class GPR(object):
-    def __init__(self, verbose=False, random_state=None, tensor=None):
+    def __init__(self, hoid=False, folio2=False, verbose=False, nLML_factor=1, nLML_print=False, random_state=None, tensor=None):
         """Gaussian Process Regression."""
+        self.hoid = hoid
+        self.folio2 = folio2
         self.verbose = verbose
+        self.nLML_factor = nLML_factor
+        self.nLML_print = nLML_print
         self.random_state = random_state
         self.rng = np.random.RandomState(random_state)
         self.tensor = tensor
@@ -39,11 +45,17 @@ class GPR(object):
         
         return uu1, uu2, vv1, vv2
     
-    def extract_exposure(self, datafile='/data4/paper/fox/DES/austinFull.fits', nExposure=500, polyOrder=3, verbose=False):
+    def extract_exposure(self, datafile=None, nExposure=500, polyOrder=3, verbose=False):
         """Extracts all data from a specified exposure (self.nExposure). Currently only supports extracting one exposure's worth of data."""
         if verbose or self.verbose: print("Extracting fits file...")
-        
-        self.datafile = datafile
+
+        if self.hoid:
+            self.datafile = '/media/data/austinfortino/austinFull.fits'
+        elif self.folio2:
+            self.datafile = '/data4/paper/fox/DES/austinFull.fits'
+        else:
+            self.datafile = datafile
+
         self.nExposure = nExposure
         
         self.fits = pf.open(self.datafile)
@@ -79,14 +91,14 @@ class GPR(object):
         self.Y = np.vstack((dx, dy)).T
         self.E = E
         
-    def remove_outliers(self, sigma, plot=True, verbose=False):
+    def remove_outliers(self, sigma, plot=True, bins=50, verbose=False):
         """Removes data points that have residuals greater than sigma standard deviations from the mean."""
         if verbose or self.verbose: print(f"Removing data points that have residuals greater than {sigma} standard deviations from the mean...")
         
         self.sigma = sigma
         
-        if plot:
-            self.plot_hist(fits_only=True)
+        if plot and (verbose or self.verbose):
+            self.plot_hist(bins, fits_only=True)
         
         percentile = lambda x, sigma: np.mean(x) + sigma * np.array([-np.std(x), np.std(x)])
         perc_dx = percentile(self.Y[:, 0], self.sigma)
@@ -95,7 +107,7 @@ class GPR(object):
         ind_dx = np.logical_and(self.Y[:, 0] > perc_dx[0], self.Y[:, 0] < perc_dx[1])
         ind_dy = np.logical_and(self.Y[:, 1] > perc_dy[0], self.Y[:, 1] < perc_dy[1])
         ind = np.where(np.logical_and(ind_dx, ind_dy))[0]
-        if verbose or self.verbose: print(f"{np.round(ind.shape[0] / self.Y.shape[0] * 100, 4)}% of {ind.shape[0]} data points are being kept.")
+        if verbose or self.verbose: print(f"{np.round(ind.shape[0] / self.Y.shape[0] * 100, 4)}% ({ind.shape[0]}) data points are being kept.")
 
         u = np.take(self.X[:, 0], ind, axis=0)
         v = np.take(self.X[:, 1], ind, axis=0)
@@ -107,8 +119,8 @@ class GPR(object):
         self.Y = np.vstack((dx, dy)).T
         self.E = E
         
-        if plot:
-            self.plot_hist(fits_only=True)
+        if plot and (verbose or self.verbose):
+            self.plot_hist(bins, fits_only=True)
         
     def split_data(self, test_size, verbose=False):
         """Separate data into training and testing sets with sklearn.model_selection.train_test_split."""
@@ -120,19 +132,19 @@ class GPR(object):
         self.nTrain = self.Xtrain.shape[0]
         self.nTest = self.Xtest.shape[0]
     
-    def white_cov(self, eps=1.49e-8, verbose=False):
+    def white_cov(self, theta, eps=1.49e-8, verbose=False):
         """Generate white noise covariance matrix."""
         if verbose or self.verbose: print("Generating white noise covariance function...")
             
         self.eps = eps
         
-        self.W = np.diag(self.Etrain**2) + self.eps * np.eye(self.nTrain)
-        self.Wss = np.diag(self.Etest**2) + self.eps * np.eye(self.nTest)
+        self.W = theta[4] * np.diag(self.Etrain**2) + self.eps * np.eye(self.nTrain)
+        self.Wss = theta[4] * np.diag(self.Etest**2) + self.eps * np.eye(self.nTest)
     
     def EBF(self, theta, X1, X2):
         """Vectorized solution for computing the elliptical kernel."""
 
-        var_s, sigma_x, sigma_y, phi = theta
+        var_s, sigma_x, sigma_y, phi, var_w = theta
         
         u1, u2 = X1[:, 0], X2[:, 0]
         v1, v2 = X1[:, 1], X2[:, 1]
@@ -153,9 +165,11 @@ class GPR(object):
     def fit(self, theta, verbose=False):
         """Solves the posterior predictive mean"""
         if verbose or self.verbose: print("Generating elliptical covariance function...")
+            
         self.K = self.EBF(theta, self.Xtrain, self.Xtrain)
         self.Kss = self.EBF(theta, self.Xtest, self.Xtest)
         self.Ks = self.EBF(theta, self.Xtest, self.Xtrain)
+        self.white_cov(theta)
         
         if verbose or self.verbose: print("Solving for posterior...")
         t0 = time()
@@ -189,9 +203,16 @@ class GPR(object):
         t1 = time()
         if verbose or self.verbose: print(f"Posterior solved for in {t1-t0} seconds.")
     
-    def summary(self, sigma=1):
+    def get_nLML(self, theta):
+        if self.nLML_print:
+            print(f"{theta[0]*u.mas**2:10.5f} {theta[1]*u.deg:10.5f} {theta[2]*u.deg:10.5f} {(theta[3]*u.rad).to(u.deg):10.5f} {theta[4]*u.mas**2:10.5f}")
+            
+        self.fit(theta)
+        return self.nLML_factor * self.nLML
+    
+    def summary(self, sigma=1, bins=50):
         print(f"Current Log Marginal Likelihood: {self.nLML}")
-        self.check_error(sigma=sigma)
+        self.check_error(sigma)
         self.chisq()
         self.plot_uv()
         self.plot_residuals()
@@ -199,12 +220,12 @@ class GPR(object):
         self.plot_quiver_GP()
         self.plot_quiver_fits()
         self.plot_resres()
-        self.plot_hist()
+        self.plot_hist(bins)
     
     def check_error(self, sigma):
         """Check what percentage of test points are within sigma standard deviations of the posterior predictive mean."""
         within_x = np.sum((np.abs(self.Ytest[:, 0] - self.fbar_s[:, 0]) < sigma*self.sigma).astype(int))
-        within_y = np.sum((np.abs(self.Ytest[:, 0] - self.fbar_s[:, 0]) < sigma*self.sigma).astype(int))
+        within_y = np.sum((np.abs(self.Ytest[:, 1] - self.fbar_s[:, 1]) < sigma*self.sigma).astype(int))
         print(f"Fraction of test points within {sigma} standard deviation(s) of posterior predictive mean:")
         print(f"dx: {within_x / self.nTest}; dy: {within_y / self.nTest}")
         
@@ -274,15 +295,15 @@ class GPR(object):
         plt.scatter(self.Ytest[:, 0] - self.fbar_s[:, 0], self.Ytest[:, 1] - self.fbar_s[:, 1], alpha=0.5)
         plt.show()
     
-    def plot_hist(self, fits_only=False):
+    def plot_hist(self, bins, fits_only=False):
         plt.figure(figsize=(8, 8))
         plt.title("Histogram of Residuals (dx, dy)")
         plt.xlabel("Value (mas)")
         plt.ylabel("Probability")
-        plt.hist(self.Y[:, 0], bins=50, histtype='step', density=True, label="dx")
-        plt.hist(self.Y[:, 1], bins=50, histtype='step', density=True, label="dy")
+        plt.hist(self.Y[:, 0], bins=bins, histtype='step', density=True, label="dx")
+        plt.hist(self.Y[:, 1], bins=bins, histtype='step', density=True, label="dy")
         if not fits_only:
-            plt.hist(self.fbar_s[:, 0], bins=50, histtype='step', density=True, label="dx from GP")
-            plt.hist(self.fbar_s[:, 1], bins=50, histtype='step', density=True, label="dy from GP")
+            plt.hist(self.fbar_s[:, 0], bins=bins, histtype='step', density=True, label="dx from GP")
+            plt.hist(self.fbar_s[:, 1], bins=bins, histtype='step', density=True, label="dy from GP")
         plt.legend()
         plt.show()
