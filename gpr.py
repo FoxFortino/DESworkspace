@@ -338,54 +338,54 @@ class GPR(object):
         self.fits = pf.open(path)
         self.exposure = self.fits[1].data
         
-    def fits_summary(self):
+    def fits_summary(self, nAvg=20):
         
-        plt.figure(figsize=(8,8))
-        dx, dy, u, v, wt = fa.residInPixels(self.exposure, binpix=1024)
-        plt.show()
-        plt.figure(figsize=(8,8))
-        GPdx, GPdy, GPu, GPv, GPwt = fa.residInPixels(self.GPexposure, binpix=1024)
-        plt.show()
+#         plt.figure(figsize=(8,8))
+#         dx, dy, u, v, wt = fa.residInPixels(self.exposure, binpix=1024)
+#         plt.show()
+#         plt.figure(figsize=(8,8))
+#         GPdx, GPdy, GPu, GPv, GPwt = fa.residInPixels(self.GPexposure, binpix=1024)
+#         plt.show()
 
-        ###--------------------###
+#         ###--------------------###
         
-        plt.figure(figsize=(12,6))
-        fa.ebPlot(dx, dy, u, v)
-        plt.show()
-        plt.figure(figsize=(12,6))
-        fa.ebPlot(GPdx, GPdy, GPu, GPv)
-        plt.show()
+#         plt.figure(figsize=(12,6))
+#         fa.ebPlot(dx, dy, u, v)
+#         plt.show()
+#         plt.figure(figsize=(12,6))
+#         fa.ebPlot(GPdx, GPdy, GPu, GPv)
+#         plt.show()
         
-        ###--------------------###
+#         ###--------------------###
         
         logr, xiplus, ximinus, xicross, junk = fa.vcorr(self.exposure)
         GPlogr, GPxiplus, GPximinus, GPxicross, GPjunk = fa.vcorr(self.GPexposure)
         
-        f, axes = plt.subplots(nrows=1, ncols=2, sharey=True, figsize=(12, 6))
-        plt.subplots_adjust(wspace=0)
+#         f, axes = plt.subplots(nrows=1, ncols=2, sharey=True, figsize=(12, 6))
+#         plt.subplots_adjust(wspace=0)
         
         r = np.exp(logr)
         GPr = np.exp(GPlogr)
         
-        axes[0].set_title("Real Correlation")
-        axes[0].semilogx(r, xiplus, 'ro', label='xiplus')
-        axes[0].semilogx(r, ximinus, 'bs', label='ximinus')
-        axes[0].semilogx(r, xicross, 'gx', label='xicross')
-        axes[0].grid()
-        axes[0].set_xlabel('Separation (degrees)')
-        axes[0].set_ylabel('xi (mas^2)')
-        axes[0].legend(framealpha=0.3)
+#         axes[0].set_title("Real Correlation")
+#         axes[0].semilogx(r, xiplus, 'ro', label='xiplus')
+#         axes[0].semilogx(r, ximinus, 'bs', label='ximinus')
+#         axes[0].semilogx(r, xicross, 'gx', label='xicross')
+#         axes[0].grid()
+#         axes[0].set_xlabel('Separation (degrees)')
+#         axes[0].set_ylabel('xi (mas^2)')
+#         axes[0].legend(framealpha=0.3)
         
-        axes[1].set_title("GP Correlation")
-        axes[1].semilogx(GPr, GPxiplus, 'ro', label='xiplus (GP)')
-        axes[1].semilogx(GPr, GPximinus, 'bs', label='ximinus(GP)')
-        axes[1].semilogx(GPr, GPxicross, 'gx', label='xicross(GP)')
-        axes[1].grid()
-        axes[1].set_xlabel('Separation (degrees)')
-        axes[1].set_ylabel('xi (mas^2)')
-        axes[1].legend(framealpha=0.3)
+#         axes[1].set_title("GP Correlation")
+#         axes[1].semilogx(GPr, GPxiplus, 'ro', label='xiplus (GP)')
+#         axes[1].semilogx(GPr, GPximinus, 'bs', label='ximinus(GP)')
+#         axes[1].semilogx(GPr, GPxicross, 'gx', label='xicross(GP)')
+#         axes[1].grid()
+#         axes[1].set_xlabel('Separation (degrees)')
+#         axes[1].set_ylabel('xi (mas^2)')
+#         axes[1].legend(framealpha=0.3)
         
-        plt.show()
+#         plt.show()
                 
         ###--------------------###
 
@@ -396,35 +396,49 @@ class GPR(object):
         plt.subplots_adjust(wspace=0)
         
         axes[0].set_title("Real Correlation")
-        axes[0].semilogx(r, xiE, 'ro', label='xiE')
-        axes[0].semilogx(r, xiB, 'bs', label='xiB')
+        axes[0].semilogx(r[nAvg:], xiE[nAvg:], 'ro', label='xiE')
+        axes[0].semilogx(r[:nAvg], xiE[:nAvg], 'go')
+        
+        axes[0].semilogx(r[nAvg:], xiB[nAvg:], 'bs', label='xiB')
+        axes[0].semilogx(r[:nAvg], xiB[:nAvg], 'gs')
         axes[0].grid()
         axes[0].set_xlabel('Separation (degrees)')
         axes[0].set_ylabel('xi (mas^2)')
         axes[0].legend(framealpha=0.3)
         
         axes[1].set_title("GP Correlation")
-        axes[1].semilogx(GPr, GPxiE, 'ro', label='xiE (GP)')
-        axes[1].semilogx(GPr, GPxiB, 'bs', label='xiB (GP)')
+        axes[1].semilogx(GPr[nAvg:], GPxiE[nAvg:], 'ro', label='xiE (GP)')
+        axes[1].semilogx(GPr[:nAvg], GPxiE[:nAvg], 'go')
+        
+        axes[1].semilogx(GPr[nAvg:], GPxiB[nAvg:], 'bs', label='xiB (GP)')
+        axes[1].semilogx(GPr[:nAvg], GPxiB[:nAvg], 'gs')
         axes[1].grid()
         axes[1].set_xlabel('Separation (degrees)')
         axes[1].set_ylabel('xi (mas^2)')
-        axes[1].legend(framealpha=0.3)
+        axes[1].legend(framealpha=0.3)    
         
         plt.show()
         
+        print(f"Mean of first {nAvg} points (Emode (Observed)): ", np.nanmean(xiE[:nAvg]))
+        print(f"Mean of first {nAvg} points (Bmode (Observed)): ", np.nanmean(xiB[:nAvg]))
+        print(f"Mean of first {nAvg} points (Emode (GPR Applied)): ", np.nanmean(GPxiE[:nAvg]))
+        print(f"Mean of first {nAvg} points (Bmode (GPR Applied)): ", np.nanmean(GPxiB[:nAvg]))
+        
+        print(f"Ratio of E modes: {np.nanmean(xiE[:nAvg]) / np.nanmean(GPxiE[:nAvg])}")
+        print(f"Ratio of B modes: {np.nanmean(xiB[:nAvg]) / np.nanmean(GPxiB[:nAvg])}")
+        
         ###--------------------###
 
-        xiplus, cts = fa.vcorr2d(self.exposure, rmax=0.3, bins=65)
-        GPxiplus, GPcts = fa.vcorr2d(self.GPexposure, rmax=0.3, bins=65)
+        xiplus, cts = fa.vcorr2d(self.exposure, rmax=0.3, bins=75)
+        GPxiplus, GPcts = fa.vcorr2d(self.GPexposure, rmax=0.3, bins=75)
         
         f, axes = plt.subplots(nrows=1, ncols=2, sharey=True, figsize=(12, 6))
         plt.subplots_adjust(wspace=0)
         
-        im = axes[0].imshow(xiplus, origin='lower', cmap='Spectral', interpolation='nearest', vmin=0, vmax=450)
+        im = axes[0].imshow(xiplus, origin='lower', cmap='Spectral', interpolation='nearest', vmin=-100, vmax=450)
         axes[0].set_title("Real vcorr2d")
         
-        im = axes[1].imshow(GPxiplus, origin='lower', cmap='Spectral', interpolation='nearest', vmin=0, vmax=450)
+        im = axes[1].imshow(GPxiplus, origin='lower', cmap='Spectral', interpolation='nearest', vmin=-100, vmax=450)
         axes[1].set_title("GP vcorr2d")
         
 #         cbar_ax = f.add_axes([0.85, 0.15, 0.05, 0.7])
