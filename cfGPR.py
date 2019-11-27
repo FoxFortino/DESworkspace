@@ -41,7 +41,7 @@ class CurlFreeGPR(object):
         self.rng = np.random.RandomState(random_state)
         
         self.printing = printing
-        
+
         self.Xunit = u.deg
         self.Yunit = u.mas
         self.Eunit = u.mas
@@ -109,7 +109,7 @@ class CurlFreeGPR(object):
         self.E = np.vstack((E, E)).T
         
         K = self.curl_free_kernel(theta, self.X, self.X)
-        W = self.white_noise_kernel(theta, self.E)
+        W = self.white_noise_kernel(self.E)
         
         Y = self.rng.multivariate_normal(np.zeros(2 * nSynth), K + W)
         self.Y = self.unflat(Y)
@@ -243,6 +243,7 @@ class CurlFreeGPR(object):
         sigma_x = theta['sigma_x'] * self.Xunit
         sigma_y = theta['sigma_y'] * self.Xunit
         phi = theta['phi'] * u.rad
+        offset = theta['offset']
         
         A = (4 * sigma_s**2 * sigma_x**5 * sigma_y**5) / np.pi
         assert A.unit == (self.Xunit**4 * self.Yunit**2), A.unit
@@ -256,7 +257,6 @@ class CurlFreeGPR(object):
         
         du = (uu1 - uu2) * self.Xunit
         dv = (vv1 - vv2) * self.Xunit
-        
         
         coeff = np.pi * A / (4 * sigma_x**5 * sigma_y**5)
         
@@ -290,9 +290,9 @@ class CurlFreeGPR(object):
         
         # K is in units of self.Yunit**2
         assert K.unit == self.Yunit**2, K.unit
-        return K.value
+        return K.value + offset
 
-    def white_noise_kernel(self, theta, E):
+    def white_noise_kernel(self, E):
         """
         This function generates the full (2N, 2N) white kernel covariance matrix.
         
@@ -301,9 +301,7 @@ class CurlFreeGPR(object):
             E (ndarray): 2d array of measurement errors (standard deviations)
         """
         
-        theta = self.fix_params(theta)
-        
-        return theta['sigma_w']**2 * np.diag(self.flat(E)**2)
+        return np.diag(self.flat(E)**2)
 
     def get_nLML(self, theta):
         """
@@ -325,16 +323,25 @@ class CurlFreeGPR(object):
         self.predict(self.Xvalid)
         self.get_chisq(self.Yvalid, self.fbar_s, self.Evalid)
         
-        # Bounds
-        bounds  = {
-            'sigma_s': (0, 1e6),
-            'sigma_x': (0.001, 1),
-            'sigma_y': (0.001, 1),
-            'phi': (0, 2*np,pi),
-            'sigma_w': (0.1, 10)
+        bounds = {
+            'sigma_s': (0, 1e4),
+            'sigma_x': (1e-3, 1),
+            'sigma_y': (1e-3, 1),
+            'phi': (-2*np.pi, 2*np.pi),
+            'offset': (-np.inf, np.inf)
         }
-        
-        return self.chisq
+        penalty_factor = self.nData
+        for key, value in bounds.items():
+            param = theta[key]
+
+            if param <= value[0]:
+                penalty = (value[0] - param) * penalty_factor
+            elif param >= value[1]:
+                penalty = (param - value[1]) * penalty_factor
+            else:
+                penalty = 0
+
+        return self.chisq + penalty
     
     def correlation_fit(self, rmax=0.3, bins=75, fn=None, p0=None, bounds=None):
         """
@@ -346,14 +353,14 @@ class CurlFreeGPR(object):
             fn (function): You can supply you're own function to fit as long as it has the same inputs as the fn defined in this method.
             p0 (list/ndarray): Starting parameter values [sigma_s, sigma_x, sigma_y, phi].
             bounds (ndarray of length 2 tuples): Upper and lower bounds for the optimizer for each parameter (note the optimizer actually uses the transpose of this, but it's clunkier to specified that).
-        """
+        """s
         
         # Find the correlation function of the actual data.
         xiplus, counts = vcorr2d(self.X[:, 0], self.X[:, 1], self.Y[:, 0], self.Y[:, 1], rmax=rmax, bins=bins)
         observed_data = xiplus.ravel()
         
         if fn == None:
-            def fn(x, sigma_s, sigma_x, sigma_y, phi):
+            def fn(x, sigma_s, sigma_x, sigma_y, phi, offset):
                 """Model function to fit the correlation function to."""
                 A = (4 * sigma_s**2 * sigma_x**5 * sigma_y**5) / np.pi
                 coeff = np.pi * A / (4 * sigma_x**5 * sigma_y**5)
@@ -372,7 +379,7 @@ class CurlFreeGPR(object):
 
                 exp = np.exp(-(1/2) * (((du * np.cos(phi) - dv * np.sin(phi))**2 / sigma_x**2) + ((dv * np.cos(phi) + du * np.sin(phi))**2 / sigma_y**2)))
 
-                return ((Ku_11 + Ku_22) * exp * coeff).ravel()
+                return ((Ku_11 + Ku_22) * exp * coeff).ravel() + offset
         
         # Create the x,y grid to evaluate the model function on.
         xmin, xmax, nx = -rmax, rmax, xiplus.shape[0]
@@ -384,14 +391,15 @@ class CurlFreeGPR(object):
         
         # These are the standard starting value and bounds that seem to work well
         if p0 is None:
-            p0 = np.array([1e2, 10**(-1.217), .1, 0])
+            p0 = np.array([1e2, 10**(-1.217), .1, 0, 0])
             
         if bounds is None:
             bounds = np.array([
                 (1, 1e8),
                 (((264*u.mas).to(u.deg)).value*10, 5),
                 (((264*u.mas).to(u.deg)).value*10, 5),
-                (-2*np.pi, 2*np.pi)
+                (-2*np.pi, 2*np.pi),
+                (-np.inf, np.inf)
             ])
             
         # Perform the fit.
@@ -402,8 +410,7 @@ class CurlFreeGPR(object):
             p0=p0,
             bounds=bounds.T)
         
-        # Set sigma_w = 1 since I don't know how to fit for sigma_w.
-        self.theta0 = np.insert(self.theta_fit, 4, 1)
+        self.theta0 = self.theta_fit
         
     def optimize(self, v0=None, fatol=1000, xatol=0.5):
         """
@@ -418,21 +425,14 @@ class CurlFreeGPR(object):
         if v0 is None:
             v0 = self.theta0
         elif v0 == 'default':
-            v0 = np.array([1e2, 10**(-1.217), .1, 0, 1])
+            v0 = np.array([1e2, 10**(-1.217), .1, 0, 0])
         else:
             assert isinstance(v0, (np.ndarray, list)), f"Type of v0 should be np.ndarray or list, but instead is {type(v0)}."
             assert np.array(v0).shape == (5,), f"Shape of v0 should be (5,), but instead is {np.array(v0).shape}."
             v0 = np.array(v0)
-
-        # Change each parameter by about 0.2 of the first vertex.
-        v1 = v0 + np.array([v0[0] * 0.15, 0, 0, 0, 0])
-        v2 = v0 + np.array([0, v0[1] * 0.15, 0, 0, 0])
-        v3 = v0 + np.array([0, 0, v0[2] * 0.15, 0, 0])
-        v4 = v0 + np.array([0, 0, 0, v0[3] * 0.15, 0])
-        v5 = v0 + np.array([0, 0, 0, 0, v0[4] * 0.15])
-
-        simplex0 = np.vstack((v0, v1, v2, v3, v4, v5))
-        assert simplex0.shape == (6, 5), f"Simplex has shape {simplex0.shape}. Simplex should have shape (N+1, N) for number of parameters N (N = 5)."
+        
+        # Create shape (p+1, p) array (the Nelder-Mead simplex) for p number of parameters
+        simplex0 = np.vstack([v0, np.vstack([v0]*5) + np.diag(v0*0.15)])
 
         options = {
             "initial_simplex": simplex0,
@@ -448,71 +448,12 @@ class CurlFreeGPR(object):
             options=options
         )
         
-#         assert opt_result.success, f"Optimizer failed to end successfully.\nStatus: {opt_result.status}\nMessage: {opt_result.message}"
+        assert opt_result.success, f"Optimizer failed to end successfully.\nStatus: {opt_result.status}\nMessage: {opt_result.message}"
         self.theta = opt_result.x
         self.nLML_final = opt_result.fun
         self.opt_result = opt_result.copy()
         
-        self.i = None
-    
-    def optimize_slsqp(self, theta0=None, bounds=None, max_ratio=20, epsilon=0.0001):
-        """
-        NOTE: This function seems to perform worse (is generally more finicky) than the Nelder-Mead optimizer in the method self.optimize.
-
-        This function has all the default information and function calls needed to run the Scipy SLSQP optimizer for the kernel parameters.
-        
-        Parameters:
-            theta0 (list/ndarray): Starting parameter values [sigma_s, sigma_x, sigma_y, phi, sigma_w]. If theta0 is None, then this function will use the theta0 supplied by the correlation_fit method.
-            bounds (ndarray of length 2 tuples): Upper and lower bounds for the optimizer for each parameter.
-            max_ratio (int/float): Maximum ratio between sigma_x and sigma_y.
-            epsilon (float): Step size used by the optimizer in calculating gradient.
-        """
-        
-        if theta0 is None:
-            # Use 0.99 times the output of the correlation_fit method in order to avoid Exit Mode 8 on the optimizer.
-            theta0 = self.theta0 * 0.99
-        elif theta0 == 'default':
-            # These are the standard starting value and bounds that seem to work well
-            theta0 = np.array([1e2, 10**(-1.217), .1, 0, 1])
-        elif isinstance(theta0, (np.ndarray, list)):
-            pass
-        
-        if bounds is None:
-            bounds = np.array([
-                (1, 1e4),
-                (((264*u.mas).to(u.deg)).value*10, 5),
-                (((264*u.mas).to(u.deg)).value*10, 5),
-                (-2*np.pi, 2*np.pi),
-                (1, np.sqrt(10))
-            ])
-        
-        # These are the two inequality constraints which specify that:
-        # sigma_x * max_ratio >= sigma_y
-        # sigma_y * max_ratio >= sigma_x
-        # This means that sigma_x and sigma_y will never be more than max_ratio times apart from each other.
-        # This seems to speed up computation time since when sigma_x and sigma_y are vastly different the computation time goes way up.
-        def g1(x):
-            sigma_x = x[1]
-            sigma_y = x[2]
-            return -sigma_x + max_ratio * sigma_y
-
-        def g2(x):
-            sigma_x = x[1]
-            sigma_y = x[2]
-            return -sigma_y + max_ratio * sigma_x
-        
-        self.opt_params, self.nLML_final, self.nIterations, self.exit_mode, self.exit_mode_explanation = opt.fmin_slsqp(
-            self.get_nLML,
-            theta0,
-            ieqcons=[g1, g2],
-            bounds=bounds,
-            iprint=2,
-            epsilon=epsilon,
-            full_output=True
-        )
-        
-        self.theta = self.opt_params
-        
+        self.i = None        
 
     def fit(self, theta):
         """
@@ -525,7 +466,7 @@ class CurlFreeGPR(object):
         self.theta = theta
 
         self.K = self.curl_free_kernel(self.theta, self.Xtrain, self.Xtrain)
-        self.W = self.white_noise_kernel(self.theta, self.Etrain)
+        self.W = self.white_noise_kernel(self.Etrain)
         self.L = np.linalg.cholesky(self.K + self.W)
         self.alpha = np.linalg.solve(self.L.T, np.linalg.solve(self.L, self.flat(self.Ytrain)))
         self.nLML = -((-1/2) * np.dot(self.flat(self.Ytrain), self.alpha) - np.sum(np.log(np.diag(self.L))) - (self.nTest / 2) * np.log(2 * np.pi))
@@ -536,6 +477,7 @@ class CurlFreeGPR(object):
         
         Parameters:
             Xnew (ndarray): Shape (N, 2) array of astrometric positions (u, v).
+            full (bool): Compute posterior predictive variance (V_s) as well as the posterior predictive mean (fbar_s)
         """
     
         self.Ks = self.curl_free_kernel(self.theta, self.Xtrain, X)
@@ -609,7 +551,7 @@ class CurlFreeGPR(object):
                 'sigma_x': theta[1],
                 'sigma_y': theta[2],
                 'phi': theta[3],
-                'sigma_w': theta[4]
+                'offset': theta[4]
             }    
             return theta_new
         
@@ -652,7 +594,23 @@ class CurlFreeGPR(object):
     
     def wrap(self):
         
-        # Need to save xiE, xiB
+        self.plot_residuals(self.Xtest, self.Ytest, self.Etest, save=True)
+        self.plot_residuals(self.Xtest, self.Ytest - self.fbar_s, self.Etest, save=True, ext='GPR_applied_')
+        
+        self.plot_div_curl(self.Xtest, self.Ytest, self.Etest, save=True)
+        self.plot_div_curl(self.Xtest, self.Ytest - self.fbar_s, self.Etest, save=True, ext='GPR_applied_')
+        
+        self.plot_Emode_2ptcorr(self.Xtest, self.Ytest, Y2=self.Ytest - self.fbar_s, save=True)
+        self.plot_xiplus_2d(self.Xtest, self.Ytest, Y2=self.fbar_s, save=True)
+        
+        nAvg = 30
+        with open(os.path.join(self.outdir, "params.out"), mode='a+') as file:
+            file.write(f"Mean of first {nAvg} points (Emode (Observed)): {np.nanmean(self.xiE[:nAvg])}\n")
+            file.write(f"Mean of first {nAvg} points (Bmode (Observed)): {np.nanmean(self.xiB[:nAvg])}\n")
+            file.write(f"Mean of first {nAvg} points (Emode (GPR Applied)): {np.nanmean(self.xiE2[:nAvg])}\n")
+            file.write(f"Mean of first {nAvg} points (Bmode (GPR Applied)): {np.nanmean(self.xiB2[:nAvg])}\n")
+            file.write(f"Ratio of E modes: {np.nanmean(self.xiE[:nAvg]) / np.nanmean(self.xiE2[:nAvg])}\n")
+            file.write(f"Ratio of B modes: {np.nanmean(self.xiB[:nAvg]) / np.nanmean(self.xiB2[:nAvg])}\n")
         
         np.savez(
             os.path.join(self.outdir, f"{self.nExposure}.npz"),
@@ -676,25 +634,9 @@ class CurlFreeGPR(object):
             E=self.E,
             Etrain=self.Etrain,
             Etest=self.Etest,
+            xiE=self.xiE,
+            xiB=self.xiB
         )
-        
-        self.plot_residuals(self.Xtest, self.Ytest, self.Etest, save=True)
-        self.plot_residuals(self.Xtest, self.Ytest - self.fbar_s, self.Etest, save=True, ext='GPR_applied_')
-        
-        self.plot_div_curl(self.Xtest, self.Ytest, self.Etest, save=True)
-        self.plot_div_curl(self.Xtest, self.Ytest - self.fbar_s, self.Etest, save=True, ext='GPR_applied_')
-        
-        self.plot_Emode_2ptcorr(self.Xtest, self.Ytest, Y2=self.Ytest - self.fbar_s, save=True)
-        self.plot_xiplus_2d(self.Xtest, self.Ytest, Y2=self.fbar_s, save=True)
-        
-        nAvg = 30
-        with open(os.path.join(self.outdir, "params.out"), mode='a+') as file:
-            file.write(f"Mean of first {nAvg} points (Emode (Observed)): {np.nanmean(self.xiE[:nAvg])}\n")
-            file.write(f"Mean of first {nAvg} points (Bmode (Observed)): {np.nanmean(self.xiB[:nAvg])}\n")
-            file.write(f"Mean of first {nAvg} points (Emode (GPR Applied)): {np.nanmean(self.xiE2[:nAvg])}\n")
-            file.write(f"Mean of first {nAvg} points (Bmode (GPR Applied)): {np.nanmean(self.xiB2[:nAvg])}\n")
-            file.write(f"Ratio of E modes: {np.nanmean(self.xiE[:nAvg]) / np.nanmean(self.xiE2[:nAvg])}\n")
-            file.write(f"Ratio of B modes: {np.nanmean(self.xiB[:nAvg]) / np.nanmean(self.xiB2[:nAvg])}\n")
         
     def plot_residuals(self, X, Y, E, binpix=512, save=False, ext=''):
         """
@@ -904,7 +846,7 @@ class CurlFreeGPR(object):
         cbar.set_label('Correlation (mas^2)', rotation=270)
         
         if save:
-            plt.savefig(os.path.join(self.outdir, "xiplus_2d.pdf"))
+            plt.savefig(os.path.join(self.outdir, f"{save}xiplus_2d.pdf"))
             
         plt.show()
         
