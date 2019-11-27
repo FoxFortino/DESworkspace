@@ -238,58 +238,42 @@ class CurlFreeGPR(object):
         """
         
         theta = self.fix_params(theta)
-        
-        sigma_s = theta['sigma_s'] * self.Yunit / self.Xunit**3
-        sigma_x = theta['sigma_x'] * self.Xunit
-        sigma_y = theta['sigma_y'] * self.Xunit
-        phi = theta['phi'] * u.rad
-        
-        A = (4 * sigma_s**2 * sigma_x**5 * sigma_y**5) / np.pi
-        assert A.unit == (self.Xunit**4 * self.Yunit**2), A.unit
-        
-        
-        u1, u2 = X1[:, 0], X2[:, 0]
-        v1, v2 = X1[:, 1], X2[:, 1]
-        
-        uu1, uu2 = np.meshgrid(u1, u2)
-        vv1, vv2 = np.meshgrid(v1, v2)
-        
-        du = (uu1 - uu2) * self.Xunit
-        dv = (vv1 - vv2) * self.Xunit
-        
-        coeff = np.pi * A / (4 * sigma_x**5 * sigma_y**5)
-        
-        Ku_11_1 = -8 * np.cos(phi)**2 * (du * np.cos(phi) - dv * np.sin(phi))**2 * sigma_y**4
-        Ku_11_2 = 8 * np.sin(phi)**2 * sigma_x**4 * (-(dv * np.cos(phi) + du * np.sin(phi))**2 + sigma_y**2)
-        Ku_11_3 = 8 * np.cos(phi) * sigma_x**2 * sigma_y**2 * (np.sin(phi) * (2 * du * dv * np.cos(2 * phi) + (du - dv) * (du + dv) * np.sin(2 * phi)) + np.cos(phi) * sigma_y**2)
-        Ku_11 = Ku_11_1 + Ku_11_2 + Ku_11_3
-        
-        Ku_12_1 = -4 * (du * np.cos(phi) - dv * np.sin(phi))**2 * np.sin(2 * phi) * sigma_y**4
-        Ku_12_2 = 4 * np.sin(2 * phi) * sigma_x**4 * ((dv * np.cos(phi) + du * np.sin(phi))**2 - sigma_y**2)
-        Ku_12_3 = 2 * sigma_x**2 * sigma_y**2 * (-4 * du * dv * np.cos(2 * phi)**2 + (-du**2 + dv**2) * np.sin(4 * phi) + 2 * np.sin(2 * phi) * sigma_y**2)
-        Ku_12 = Ku_12_1 + Ku_12_2 + Ku_12_3
-        
-        Ku_22_1 = -8 * np.sin(phi)**2 * (du * np.cos(phi) - dv * np.sin(phi))**2 * sigma_y**4
-        Ku_22_2 = 8 * np.cos(phi)**2 * sigma_x**4 * (-(dv * np.cos(phi) + du * np.sin(phi))**2 + sigma_y**2)
-        Ku_22_3 = 4 * sigma_x**2 * sigma_y**2 * ((-du**2 + dv**2) * np.sin(2 * phi)**2 - du * dv * np.sin(4 * phi) + 2 * np.sin(phi)**2 * sigma_y**2)
-        Ku_22 = Ku_22_1 + Ku_22_2 + Ku_22_3
-        
-        exp = np.exp(-(1/2) * (((du * np.cos(phi) - dv * np.sin(phi))**2 / sigma_x**2) + ((dv * np.cos(phi) + du * np.sin(phi))**2 / sigma_y**2)))
-        
-        n1 = X1.shape[0]
-        n2 = X2.shape[0]
-        K = np.zeros((2*n1, 2*n2), dtype=float) * Ku_11.unit
-        
-        K[::2, ::2] = (Ku_11 * exp).T
-        K[1::2, ::2] = (Ku_12 * exp).T
-        K[::2, 1::2] = (Ku_12 * exp).T
-        K[1::2, 1::2] = (Ku_22 * exp).T
-        
-        K = K * coeff
-        
-        # K is in units of self.Yunit**2
-        assert K.unit == self.Yunit**2, K.unit
-        return K.value
+
+        sigma_s = theta['sigma_s'] 
+        sigma_x = theta['sigma_x'] 
+        sigma_y = theta['sigma_y'] 
+        phi = theta['phi']
+
+        #Construct elements of the inverse covariance matrix
+        detC = (sigma_x * sigma_y)**2
+        a = 0.5*(sigma_x**2 + sigma_y**2)
+        b = 0.5*(sigma_x**2 - sigma_y**2)
+        b1 = b * np.cos(2*phi)
+        b2 = -b * np.sin(2*phi)
+        cInv = np.array( [ [a-b1, -b2],[-b2, a+b1]]) / detC
+
+        dX = X1[:,np.newaxis,:] - X2[np.newaxis,:,:]  # Array is N1 x N2 x 2
+
+        cInvX = np.einsum('kl,ijl',cInv,dX)  # Another N1 x N2 x 2
+
+        exponentialFactor = np.exp(-0.5*np.sum(cInvX*dX,axis=2))
+        # Multiply the overall prefactor into this scalar array
+        exponentialFactor *= sigma_s**2/np.trace(cInv)
+
+        # Start building the master answer, as (N1,N2,2,2) array
+        k = np.ones( dX.shape + (2,)) * cInv  # Start with cInv term
+        # Now subtract the outer product of cInvX
+        k -= cInvX[:,:,:,np.newaxis]*cInvX[:,:,np.newaxis,:]
+
+        # And the exponential
+        k = k * exponentialFactor[:,:,np.newaxis,np.newaxis]
+
+        # change (N1,N2,2,2) to (2*N1,2*N2) array
+        k = np.moveaxis(k,2,1)
+        s = k.shape
+        k = k.reshape(s[0]*2,s[2]*2)
+
+        return k
 
     def white_noise_kernel(self, E):
         """
@@ -319,8 +303,8 @@ class CurlFreeGPR(object):
         self.print_params(theta, time=True, fix_phi=False, output=True)
 
         self.fit(theta)
-        self.predict(self.Xvalid)
-        self.get_chisq(self.Yvalid, self.fbar_s, self.Evalid)
+#         self.predict(self.Xvalid)
+#         self.get_chisq(self.Yvalid, self.fbar_s, self.Evalid)
         
         bounds = {
             'sigma_s': (0, 1e4),
@@ -328,6 +312,7 @@ class CurlFreeGPR(object):
             'sigma_y': (1e-3, 1),
             'phi': (-2*np.pi, 2*np.pi),
         }
+        
         penalty_factor = self.nData
         for key, value in bounds.items():
             param = theta[key]
@@ -339,7 +324,7 @@ class CurlFreeGPR(object):
             else:
                 penalty = 0
 
-        return self.chisq + penalty
+        return self.nLML + penalty
     
     def correlation_fit(self, rmax=0.3, bins=75, fn=None, p0=None, bounds=None):
         """
@@ -351,7 +336,7 @@ class CurlFreeGPR(object):
             fn (function): You can supply you're own function to fit as long as it has the same inputs as the fn defined in this method.
             p0 (list/ndarray): Starting parameter values [sigma_s, sigma_x, sigma_y, phi].
             bounds (ndarray of length 2 tuples): Upper and lower bounds for the optimizer for each parameter (note the optimizer actually uses the transpose of this, but it's clunkier to specified that).
-        """s
+        """
         
         # Find the correlation function of the actual data.
         xiplus, counts = vcorr2d(self.X[:, 0], self.X[:, 1], self.Y[:, 0], self.Y[:, 1], rmax=rmax, bins=bins)
@@ -389,15 +374,14 @@ class CurlFreeGPR(object):
         
         # These are the standard starting value and bounds that seem to work well
         if p0 is None:
-            p0 = np.array([1e2, 10**(-1.217), .1, 0, 0])
+            p0 = np.array([1e2, 10**(-1.217), .1, 0])
             
         if bounds is None:
             bounds = np.array([
                 (1, 1e8),
                 (((264*u.mas).to(u.deg)).value*10, 5),
                 (((264*u.mas).to(u.deg)).value*10, 5),
-                (-2*np.pi, 2*np.pi),
-                (-np.inf, np.inf)
+                (-2*np.pi, 2*np.pi)
             ])
             
         # Perform the fit.
@@ -423,14 +407,14 @@ class CurlFreeGPR(object):
         if v0 is None:
             v0 = self.theta0
         elif v0 == 'default':
-            v0 = np.array([1e2, 10**(-1.217), .1, 0, 0])
+            v0 = np.array([1e2, 10**(-1.217), .1, 0])
         else:
             assert isinstance(v0, (np.ndarray, list)), f"Type of v0 should be np.ndarray or list, but instead is {type(v0)}."
-            assert np.array(v0).shape == (5,), f"Shape of v0 should be (5,), but instead is {np.array(v0).shape}."
+            assert np.array(v0).shape == (4,), f"Shape of v0 should be (4,), but instead is {np.array(v0).shape}."
             v0 = np.array(v0)
         
         # Create shape (p+1, p) array (the Nelder-Mead simplex) for p number of parameters
-        simplex0 = np.vstack([v0, np.vstack([v0]*5) + np.diag(v0*0.15)])
+        simplex0 = np.vstack([v0, np.vstack([v0]*4) + np.diag(v0*0.15)])
 
         options = {
             "initial_simplex": simplex0,
@@ -1094,10 +1078,6 @@ def vcorr2d(u, v, dx, dy, rmax=1., bins=513):
     vec =  dx + 1j*dy
     vvec = dx[i1] * dx[i2] + dy[i1] * dy[i2]
     xiplus = np.histogram2d(xshift, yshift, bins=bins, range=hrange, weights=vvec)[0]/counts
-    
-    # XXX Austin's addition here: is this the right way to get xi_-?
-    # vvec = dx[i1] * dx[i2] - dy[i1] * dy[i2]
-    # xiplus = np.histogram2d(xshift, yshift, bins=bins, range=hrange, weights=vvec)[0]/counts
 
     xiplus = 0.5*(xiplus + xiplus[::-1,::-1])  # Combine pairs
     return xiplus, counts
