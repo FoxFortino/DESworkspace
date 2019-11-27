@@ -340,23 +340,23 @@ class GPR(object):
         
     def fits_summary(self, nAvg=20):
         
-#         plt.figure(figsize=(8,8))
-#         dx, dy, u, v, wt = fa.residInPixels(self.exposure, binpix=1024)
-#         plt.show()
-#         plt.figure(figsize=(8,8))
-#         GPdx, GPdy, GPu, GPv, GPwt = fa.residInPixels(self.GPexposure, binpix=1024)
-#         plt.show()
+        plt.figure(figsize=(8,8))
+        dx, dy, u, v, wt = fa.residInPixels(self.exposure, binpix=1024)
+        plt.show()
+        plt.figure(figsize=(8,8))
+        GPdx, GPdy, GPu, GPv, GPwt = fa.residInPixels(self.GPexposure, binpix=1024)
+        plt.show()
 
-#         ###--------------------###
+        ###--------------------###
         
-#         plt.figure(figsize=(12,6))
-#         fa.ebPlot(dx, dy, u, v)
-#         plt.show()
-#         plt.figure(figsize=(12,6))
-#         fa.ebPlot(GPdx, GPdy, GPu, GPv)
-#         plt.show()
+        plt.figure(figsize=(12,6))
+        fa.ebPlot(dx, dy, u, v)
+        plt.show()
+        plt.figure(figsize=(12,6))
+        fa.ebPlot(GPdx, GPdy, GPu, GPv)
+        plt.show()
         
-#         ###--------------------###
+        ###--------------------###
         
         logr, xiplus, ximinus, xicross, junk = fa.vcorr(self.exposure)
         GPlogr, GPxiplus, GPximinus, GPxicross, GPjunk = fa.vcorr(self.GPexposure)
