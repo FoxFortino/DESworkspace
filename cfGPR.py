@@ -243,7 +243,6 @@ class CurlFreeGPR(object):
         sigma_x = theta['sigma_x'] * self.Xunit
         sigma_y = theta['sigma_y'] * self.Xunit
         phi = theta['phi'] * u.rad
-        offset = theta['offset']
         
         A = (4 * sigma_s**2 * sigma_x**5 * sigma_y**5) / np.pi
         assert A.unit == (self.Xunit**4 * self.Yunit**2), A.unit
@@ -290,7 +289,7 @@ class CurlFreeGPR(object):
         
         # K is in units of self.Yunit**2
         assert K.unit == self.Yunit**2, K.unit
-        return K.value + offset
+        return K.value
 
     def white_noise_kernel(self, E):
         """
@@ -328,7 +327,6 @@ class CurlFreeGPR(object):
             'sigma_x': (1e-3, 1),
             'sigma_y': (1e-3, 1),
             'phi': (-2*np.pi, 2*np.pi),
-            'offset': (-np.inf, np.inf)
         }
         penalty_factor = self.nData
         for key, value in bounds.items():
@@ -360,7 +358,7 @@ class CurlFreeGPR(object):
         observed_data = xiplus.ravel()
         
         if fn == None:
-            def fn(x, sigma_s, sigma_x, sigma_y, phi, offset):
+            def fn(x, sigma_s, sigma_x, sigma_y, phi):
                 """Model function to fit the correlation function to."""
                 A = (4 * sigma_s**2 * sigma_x**5 * sigma_y**5) / np.pi
                 coeff = np.pi * A / (4 * sigma_x**5 * sigma_y**5)
@@ -379,7 +377,7 @@ class CurlFreeGPR(object):
 
                 exp = np.exp(-(1/2) * (((du * np.cos(phi) - dv * np.sin(phi))**2 / sigma_x**2) + ((dv * np.cos(phi) + du * np.sin(phi))**2 / sigma_y**2)))
 
-                return ((Ku_11 + Ku_22) * exp * coeff).ravel() + offset
+                return ((Ku_11 + Ku_22) * exp * coeff).ravel()
         
         # Create the x,y grid to evaluate the model function on.
         xmin, xmax, nx = -rmax, rmax, xiplus.shape[0]
@@ -551,7 +549,6 @@ class CurlFreeGPR(object):
                 'sigma_x': theta[1],
                 'sigma_y': theta[2],
                 'phi': theta[3],
-                'offset': theta[4]
             }    
             return theta_new
         
