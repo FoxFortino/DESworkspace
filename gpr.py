@@ -338,6 +338,18 @@ class GPR(object):
         self.fits = pf.open(path)
         self.exposure = self.fits[1].data
         
+    def calc_EB(self):
+        
+        self.logr, xiplus, ximinus, xicross, junk = fa.vcorr(self.exposure)
+        self.GPlogr, GPxiplus, GPximinus, GPxicross, GPjunk = fa.vcorr(self.GPexposure)
+        
+        self.xiE, self.xiB = fa.xiEB(self.logr, xiplus, ximinus)
+        self.GPxiE, self.GPxiB = fa.xiEB(self.GPlogr, GPxiplus, GPximinus)
+        
+        self.r = np.exp(self.logr)
+        self.GPr = np.exp(self.GPlogr)
+        
+        
     def fits_summary(self, nAvg=20):
         
         plt.figure(figsize=(8,8))
@@ -391,6 +403,7 @@ class GPR(object):
 
         xiE, xiB = fa.xiEB(logr, xiplus, ximinus)
         GPxiE, GPxiB = fa.xiEB(GPlogr, GPxiplus, GPximinus)
+
         
         f, axes = plt.subplots(nrows=1, ncols=2, sharey=True, figsize=(12, 6))
         plt.subplots_adjust(wspace=0)
