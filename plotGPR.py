@@ -235,7 +235,7 @@ def DivCurl(
     noise = f"Noise: {np.round(errors[2].value, 1)} {errors[2].unit}"
 
     # Calculate div and curl
-    div, curl = plotGPR.calcDivCurl(x, y, dx, dy)
+    div, curl = calcDivCurl(x, y, dx, dy)
     vardiv = np.sqrt(gbutil.clippedMean(div[div == div], 5.)[1])
     varcurl = np.sqrt(gbutil.clippedMean(curl[div == div], 5.)[1])
     
@@ -253,7 +253,7 @@ def DivCurl(
         noise2 = f"Noise: {np.round(errors2[2].value, 1)} {errors2[2].unit}"
         
         # Calculate second div and curl
-        div2, curl2 = plotGPR.calcDivCurl(x2, y2, dx2, dy2)
+        div2, curl2 = calcDivCurl(x2, y2, dx2, dy2)
         vardiv2 = np.sqrt(gbutil.clippedMean(div2[div2 == div2], 5.)[1])
         varcurl2 = np.sqrt(gbutil.clippedMean(curl2[div2 == div2], 5.)[1])
         
