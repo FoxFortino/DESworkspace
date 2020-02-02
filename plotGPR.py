@@ -380,7 +380,7 @@ def plot_Emode_2ptcorr(
     r = np.exp(logr)
 
     # Check for second set of data:
-    if np.all([arr is not None for arr in [x2, y2, dx2, dy2, err2]]):
+    if np.all([arr is not None for arr in [x2, y2, dx2, dy2]]):
         data2 = True
         correlations2 = calcCorrelation(x, y, dx, dy,
                                       rmin=rmin, rmax=rmax,
