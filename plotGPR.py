@@ -25,16 +25,14 @@ def astrometricError(
         y -- (astropy.units.quantity.Quantity) (N,) specifies y position
         dx -- (astropy.units.quantity.Quantity) (N,) specifies dx vector
         dy -- (astropy.units.quantity.Quantity) (N,) specifies dy vector
-        err -- (astropy.units.quantity.Quantity) (N,) specifies error for
-each vector (dx, dy)
+        err -- (astropy.units.quantity.Quantity) (N,) specifies error for each vector (dx, dy)
         
     Keyword Arguments:
         x2 -- (astropy.units.quantity.Quantity) (N,) specifies x position
         y2 -- (astropy.units.quantity.Quantity) (N,) specifies y position
         dx2 -- (astropy.units.quantity.Quantity) (N,) specifies dx vector
         dy2 -- (astropy.units.quantity.Quantity) (N,) specifies dy vector
-        err2 -- (astropy.units.quantity.Quantity) (N,) specifies error for
-each vector (dx, dy)
+        err2 -- (astropy.units.quantity.Quantity) (N,) specifies error for each vector (dx, dy)
         title1 -- (str) Title of the first plot (x, y, etc.)
         title2 -- (str) TItle of the secnod plot (x2, y2, etc.)
         minPoints -- (int) Minimum number of max plots that will be plotted
@@ -640,11 +638,11 @@ def calcDivCurl(x, y, dx, dy):
     dx2d[iy,ix] = dx
     dy2d[iy,ix] = dy
     
-    dxdx = dx2d[2:, 1:-1] - dx2d[:-2, 1:-1]
-    dydy = dy2d[1:-1, 2:] - dy2d[1:-1, :-2]
-    
-    dydx = dy2d[2:, 1:-1] - dx2d[:-2, 1:-1]
-    dxdy = dy2d[1:-1, 2:] - dx2d[1:-1, :-2]
+    # XXX These lines may be wrong?
+    dxdx = dy2d[2:, 1:-1] - dy2d[:-2, 1:-1]
+    dydx = dx2d[2:, 1:-1] - dx2d[:-2, 1:-1]
+    dxdy = dy2d[1:-1, 2:] - dy2d[1:-1, :-2]
+    dydy = dx2d[1:-1, 2:] - dx2d[1:-1, :-2]
 
     div = np.where(use, dxdx + dydy, np.nan)
     curl = np.where(use, dydx - dxdy, np.nan)
