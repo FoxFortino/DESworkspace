@@ -392,7 +392,7 @@ def plot_Emode_2ptcorr(
         data2 = False
 
     # Calculate the indices to average together for each correlation function
-    ind = r[r < sep]
+    ind = r[r < sep.to(u.deg).value]
 
     plt.figure(figsize=(10, 10))
     plt.title("Angle Averaged 2-Point Correlation Function of Astrometric Residuals")
