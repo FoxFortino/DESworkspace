@@ -359,6 +359,141 @@ def DivCurl(
 
     plt.show()
 
+def plot_Emode_2ptcorr(
+    x, y, dx, dy,
+    x2=None, y2=None, dx2=None, dy2=None,
+    title1="Observed", title2="GPR Applied",
+    xiE_ON=True, xiB_ON=False,
+    xiplus_ON=False, ximinus_ON=False,
+    xicross_ON=False, xiz2_ON=False,
+    rmin=5*u.arcsec, rmax=1.5*u.deg, dlogr=0.05,
+    ylim=(-50, 500),
+    sep=0.01*u.deg, avgLine=True,
+    savedir=None
+    ):
+
+    # Calculate correlation functions
+    correlations = calcCorrelation(x, y, dx, dy,
+                                  rmin=rmin, rmax=rmax,
+                                  dlogr=dlogr)
+    logr, xiplus, ximinus, xicross, xiz2, xiE, xiB = correlations
+    r = np.exp(logr)
+
+    # Check for second set of data:
+    if np.all([arr is not None for arr in [x2, y2, dx2, dy2, err2]]):
+        data2 = True
+        correlations2 = calcCorrelation(x, y, dx, dy,
+                                      rmin=rmin, rmax=rmax,
+                                      dlogr=dlogr)
+        logr2, xiplus2, ximinus2, xicross2, xiz22, xiE2, xiB2 = correlations2
+        r2 = np.exp(logr2)
+        assert r2 == r, "r and r2 are not the same"
+    else:
+        data2 = False
+
+    # Calculate the indices to average together for each correlation function
+    ind = r[r < sep]
+
+    plt.figure(figsize=(10, 10))
+    plt.title("Angle Averaged 2-Point Correlation Function of Astrometric Residuals")
+    plt.xlabel("Separation (deg)")
+    plt.ylabel("Correlation (mas2)")
+
+    avgs = {}
+    stds = {}
+    
+    if xiE_ON:
+        plt.semilogx(r, xiE, "r.", label=f"E-Mode {title1}")
+        avgs["E-Mode"] = np.nanmean(xiE[ind])
+        stds["E-Mode"] = np.std(xiE[ind])
+
+    if xiB_ON:
+        plt.semilogx(r, xiB, "b.", label=f"B-Mode {title1}")
+        avgs["B-Mode"] = np.nanmean(xiB[ind])
+        stds["B-Mode"] = np.std(xiB[ind])
+
+    if xiplus_ON:
+        plt.semilogx(r, xiplus, "g.", label=f"xi_+ {title1}")
+        avgs["xi_+"] = np.nanmean(xiplus[ind])
+        stds["xi_+"] = np.std(xiplus[ind])
+
+    if ximinus_ON:
+        plt.semilogx(r, ximinus, "c.", label=f"xi_- {title1}")
+        avgs["xi_-"] = np.nanmean(ximinus[ind])
+        stds["xi_-"] = np.std(ximinus[ind])
+
+    if xicross_ON:
+        plt.semilogx(r, xicross, "m.", label=f"xi_x {title1}")
+        avgs["xi_x"] = np.nanmean(xicross[ind])
+        stds["xi_x"] = np.std(xicross[ind])
+
+    if xiz2_ON:
+        plt.semilogx(r, xiz2, "y.", label=f"xi_z^2 {title1}")
+        avgs["xi_z^2"] = np.nanmean(xiz2[ind])
+        stds["xi_z^2"] = np.std(xiz2[ind])
+
+    for corr, avg in avgs.items():
+        print(f"Mean of first {len(ind)} points {corr} {title1}: {avg}")
+
+    for corr, std in stds.items():
+        print(f"Mean of first {len(ind)} points {corr} {title1}: {std}")
+
+    
+
+    
+    # # Plot xiE
+    # plt.semilogx(np.exp(logr), self.xiE, 'r.', label="E Mode (Observed)")
+    # print(f"Mean of first {nAvg} points (Emode (Observed)): ", np.nanmean(self.xiE[:nAvg]))
+
+    # if Bmode:
+    #     # Plot xiB
+    #     plt.title("E and B Mode Correlation")
+    #     plt.semilogx(np.exp(logr), self.xiB, 'b.', label="B Mode (Observed)")
+    #     plt.legend(framealpha=0.3)
+    #     print(f"Mean of first {nAvg} points (Bmode (Observed)): ", np.nanmean(self.xiB[:nAvg]))
+    
+    
+    # if Y2 is not None:
+        
+    #     # Solve for weighted and pixelized residuals, as well as angle averaged correlation function.
+    #     u, v, dx, dy = X[:, 0], X[:, 1], Y2[:, 0], Y2[:, 1]
+    #     logr2, xiplus2, ximinus2, xicross2, xiz22 = vcorr(u, v, dx, dy)
+        
+    #     # Calculate xiE and xiB
+    #     dlogr2 = np.zeros_like(logr2)
+    #     dlogr2[1:-1] = 0.5 * (logr2[2:] - logr2[:-2])
+    #     tmp2 = np.array(ximinus2) * dlogr2
+    #     integral2 = np.cumsum(tmp2[::-1])[::-1]
+    #     self.xiB2 = 0.5 * (xiplus2 - ximinus2) + integral2
+    #     self.xiE2 = xiplus2 - self.xiB2
+        
+    #     # Plot xiE
+    #     plt.semilogx(np.exp(logr2), self.xiE2, 'rx', label="E Mode (GPR Applied)")    
+    #     print(f"Mean of first {nAvg} points (Emode (GPR Applied)): ", np.nanmean(self.xiE2[:nAvg]))
+        
+    #     if Bmode:
+    #         # Plot xiB
+    #         plt.semilogx(np.exp(logr2), self.xiB2, 'bx', label='B Mode (GPR Applied)')
+    #         print(f"Mean of first {nAvg} points (Bmode (GPR Applied)): ", np.nanmean(self.xiB2[:nAvg]))
+        
+        
+    #     plt.legend(framealpha=0.3)
+        
+    #     print(f"Ratio of E modes: {np.nanmean(self.xiE[:nAvg]) / np.nanmean(self.xiE2[:nAvg])}")
+    #     print(f"Ratio of B modes: {np.nanmean(self.xiB[:nAvg]) / np.nanmean(self.xiB2[:nAvg])}")
+
+        
+    # if plot_avg_line:
+    #     plt.axvline(x=np.exp(logr)[nAvg], color='k', linestyle='--')
+    
+    # # Show plots
+    # plt.grid()
+    
+    # if save:
+    #     plt.savefig(os.path.join(self.outdir, "Emode.pdf"))
+    
+    plt.show()
+
 def calcPixelGrid(
     x, y, dx, dy, err,
     minPoints=100,
@@ -559,7 +694,7 @@ def calcDivCurl(x, y, dx, dy):
     
     return div, curl
 
-def calcCorrelation(x, y, dx, dy, minr=5*u.arcsec, maxr=1.5*u.deg, dlogr=0.05):
+def calcCorrelation(x, y, dx, dy, rmin=5*u.arcsec, rmax=1.5*u.deg, dlogr=0.05):
     """
     Produce angle-averaged 2-point correlation functions of astrometric error.
 
@@ -572,9 +707,9 @@ def calcCorrelation(x, y, dx, dy, minr=5*u.arcsec, maxr=1.5*u.deg, dlogr=0.05):
         dy -- (astropy.units.quantity.Quantity) (N,) specifies dy vector
 
     Keyword Arguments:
-        minr -- (astropy.units.quantity.Quantity) (scalar) minimum separation radius bin
-        maxr -- (astropy.units.quantity.Quantity) (scalar) maximum separation radius bun
-        dlogr -- (float) step size between minr and maxr
+        rmin -- (astropy.units.quantity.Quantity) (scalar) minimum separation radius bin
+        rmax -- (astropy.units.quantity.Quantity) (scalar) maximum separation radius bun
+        dlogr -- (float) step size between rmin and rmax
 
     Return:
         logr -- (np.ndarray) mean log(radius) in each bin (deg)
@@ -582,11 +717,13 @@ def calcCorrelation(x, y, dx, dy, minr=5*u.arcsec, maxr=1.5*u.deg, dlogr=0.05):
         ximinus -- (np.ndarray) <vr1 vr2 - vt1 vt2> (mas2)
         xicross -- (np.ndarray) <vr1 vt2 + vt1 vr2> (mas2)
         xiz2 -- (np.ndarray) <vx1 vx2 - vy1 vy2 + 2 i vx1 vy2> (mas2)
+        xiE -- (np.ndarray) E-mode correlation
+        xiB -- (np.ndarray) B-mode correlation
     """
 
-    # Check that all (x, y, dx, dy, minr, maxr) are astropy quantity objects
+    # Check that all (x, y, dx, dy, rmin, rmax) are astropy quantity objects
     if not np.all([isinstance(arr, u.quantity.Quantity) 
-                   for arr in [x, y, dx, dy, minr, maxr]]):
+                   for arr in [x, y, dx, dy, rmin, rmax]]):
         raise TypeError("All input arrays must be of type astropy.units.quantity.Quantity.")
 
     # Check that x, y have the same units
@@ -606,8 +743,8 @@ def calcCorrelation(x, y, dx, dy, minr=5*u.arcsec, maxr=1.5*u.deg, dlogr=0.05):
         raise TypeError(f"dlogr must be a float but is {type(dlogr)}.")
 
     # Make sure everything is in the correct units and then just take the value. Don't feel like integrating units into the calculation.
-    minr = minr.to(u.deg).value
-    maxr = maxr.to(u.deg).value
+    rmin = rmin.to(u.deg).value
+    rmax = rmax.to(u.deg).value
     x = x.to(u.deg).value
     y = y.to(u.deg).value
     dx = dx.to(u.mas).value
@@ -646,7 +783,7 @@ def calcCorrelation(x, y, dx, dy, minr=5*u.arcsec, maxr=1.5*u.deg, dlogr=0.05):
     xiz2 = np.histogram(logdr, bins=nBins, range=hrange, weights=vvec)[0]
     xiz2 /= counts
 
-    #Calculate xi_- and xi_x
+    # Calculate xi_- and xi_x
     tmp = vvec * np.conj(dr)
     vvec = tmp * np.conj(dr)
     dr = dr.real*dr.real + dr.imag*dr.imag
@@ -657,4 +794,12 @@ def calcCorrelation(x, y, dx, dy, minr=5*u.arcsec, maxr=1.5*u.deg, dlogr=0.05):
     xicross = np.imag(ximinus)
     ximinus = np.real(ximinus)
 
-    return logr, xiplus, ximinus, xicross, xiz2
+    # Calculate xi_E and xi_B
+    dlogr = np.zeros_like(logr)
+    dlogr[1:-1] = 0.5 * (logr[2:] - logr[:-2])
+    tmp = np.array(ximinus) * dlogr
+    integral = np.cumsum(tmp[::-1])[::-1]
+    xiB = 0.5 * (xiplus - ximinus) + integral
+    xiE = xiplus - xiB
+
+    return logr, xiplus, ximinus, xicross, xiz2, xiE, xiB
