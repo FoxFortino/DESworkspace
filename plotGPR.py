@@ -789,7 +789,7 @@ def calcCorrelation(x, y, dx, dy, rmin=5*u.arcsec, rmax=1.5*u.deg, dlogr=0.05):
     dr = dr.real*dr.real + dr.imag*dr.imag
     vvec /= dr
     del dr
-    ximinus = np.histogram(logdr, bins=bins, range=hrange, weights=vvec)[0]
+    ximinus = np.histogram(logdr, bins=nBins, range=hrange, weights=vvec)[0]
     ximinus /= counts
     xicross = np.imag(ximinus)
     ximinus = np.real(ximinus)
