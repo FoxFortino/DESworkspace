@@ -301,15 +301,12 @@ class CurlFreeGPR(object):
         
         theta = self.fix_params(theta)
         self.print_params(theta, time=True, fix_phi=False, output=True)
-
         self.fit(theta)
-#         self.predict(self.Xvalid)
-#         self.get_chisq(self.Yvalid, self.fbar_s, self.Evalid)
         
         bounds = {
             'sigma_s': (0, 1e4),
-            'sigma_x': (1e-3, 1),
-            'sigma_y': (1e-3, 1),
+            'sigma_x': (0, 1),
+            'sigma_y': (0, 1),
             'phi': (-2*np.pi, 2*np.pi),
         }
         
@@ -323,8 +320,24 @@ class CurlFreeGPR(object):
                 penalty = (param - value[1]) * penalty_factor
             else:
                 penalty = 0
+                
+        self.predict(self.Xtest)
+#         self.get_chisq(self.Ytest, self.fbar_s, self.Etest)
+#         return self.chisq + penalty
 
-        return self.nLML + penalty
+        u, v, dx, dy = self.Xtest[:, 0], self.Xtest[:, 1], self.Ytest[:, 0] - self.fbar_s[:, 0], self.Ytest[:, 1] - self.fbar_s[:, 1]
+        logr, xiplus, ximinus, xicross, xiz2 = vcorr(u, v, dx, dy)
+        
+        # Calculate xiE and xiB
+        dlogr = np.zeros_like(logr)
+        dlogr[1:-1] = 0.5 * (logr[2:] - logr[:-2])
+        tmp = np.array(ximinus) * dlogr
+        integral = np.cumsum(tmp[::-1])[::-1]
+        xiB = 0.5 * (xiplus - ximinus) + integral
+        xiE = xiplus - xiB
+    
+#         print(np.nanmean(xiE[:50]), penalty)
+        return np.nanmean(xiE[:50]) + penalty
     
     def correlation_fit(self, rmax=0.3, bins=75, fn=None, p0=None, bounds=None):
         """
@@ -342,28 +355,41 @@ class CurlFreeGPR(object):
         xiplus, counts = vcorr2d(self.X[:, 0], self.X[:, 1], self.Y[:, 0], self.Y[:, 1], rmax=rmax, bins=bins)
         observed_data = xiplus.ravel()
         
-        if fn == None:
-            def fn(x, sigma_s, sigma_x, sigma_y, phi):
-                """Model function to fit the correlation function to."""
-                A = (4 * sigma_s**2 * sigma_x**5 * sigma_y**5) / np.pi
-                coeff = np.pi * A / (4 * sigma_x**5 * sigma_y**5)
+        def fn(x, sigma_s, sigma_x, sigma_y, phi):
+            """
+            Gary's version of a function that calculates trace of Kuv for
+            a given set of x=(du,dv).
+            """
+            # Make the tuple du,dv into an Nx2 array.
+            dX = np.vstack( (np.array(x[0]), np.array(x[1]))).transpose()
+            # print(dX.shape)##
 
-                du, dv = x
+            #Construct elements of the inverse covariance matrix
+            detC = (sigma_x * sigma_y)**2
+            a = 0.5*(sigma_x**2 + sigma_y**2)
+            b = 0.5*(sigma_x**2 - sigma_y**2)
+            b1 = b * np.cos(2*phi)
+            b2 = -b * np.sin(2*phi)
+            cInv = np.array( [ [a-b1, -b2],[-b2, a+b1]]) / detC
+            traceCInv = np.trace(cInv)
 
-                Ku_11_1 = -8 * np.cos(phi)**2 * (du * np.cos(phi) - dv * np.sin(phi))**2 * sigma_y**4
-                Ku_11_2 = 8 * np.sin(phi)**2 * sigma_x**4 * (-(dv * np.cos(phi) + du * np.sin(phi))**2 + sigma_y**2)
-                Ku_11_3 = 8 * np.cos(phi) * sigma_x**2 * sigma_y**2 * (np.sin(phi) * (2 * du * dv * np.cos(2 * phi) + (du - dv) * (du + dv) * np.sin(2 * phi)) + np.cos(phi) * sigma_y**2)
-                Ku_11 = Ku_11_1 + Ku_11_2 + Ku_11_3
+            cInvX = np.einsum('kl,jl',cInv,dX)  # Another N x 2 array
 
-                Ku_22_1 = -8 * np.sin(phi)**2 * (du * np.cos(phi) - dv * np.sin(phi))**2 * sigma_y**4
-                Ku_22_2 = 8 * np.cos(phi)**2 * sigma_x**4 * (-(dv * np.cos(phi) + du * np.sin(phi))**2 + sigma_y**2)
-                Ku_22_3 = 4 * sigma_x**2 * sigma_y**2 * ((-du**2 + dv**2) * np.sin(2 * phi)**2 - du * dv * np.sin(4 * phi) + 2 * np.sin(phi)**2 * sigma_y**2)
-                Ku_22 = Ku_22_1 + Ku_22_2 + Ku_22_3
+            # Now make the Tr(cInv) - Tr(cInvX * cInvX^T) vector
+            k = traceCInv - np.sum(cInvX*cInvX, axis=1)
 
-                exp = np.exp(-(1/2) * (((du * np.cos(phi) - dv * np.sin(phi))**2 / sigma_x**2) + ((dv * np.cos(phi) + du * np.sin(phi))**2 / sigma_y**2)))
+            # Multiply by the exponential
+            k *= np.exp(-0.5*np.sum(cInvX*dX,axis=1))
 
-                return ((Ku_11 + Ku_22) * exp * coeff).ravel()
-        
+            # And rescale to sigma_s**2 at origin.
+            k *= sigma_s**2/traceCInv
+
+            # Return a scalar if input was scalar, else an array
+            if k.size==1:
+                return k[0]
+            else:
+                return k.flatten()
+
         # Create the x,y grid to evaluate the model function on.
         xmin, xmax, nx = -rmax, rmax, xiplus.shape[0]
         ymin, ymax, ny = -rmax, rmax, xiplus.shape[1]
@@ -394,7 +420,7 @@ class CurlFreeGPR(object):
         
         self.theta0 = self.theta_fit
         
-    def optimize(self, v0=None, fatol=1000, xatol=0.5):
+    def optimize(self, v0=None):
         """
         This function calls the Nelder-Mead Scipy optimizer to minimize the nLML (negative Log Marginal Likeliood) as a function of kernel parameters.
         
@@ -418,8 +444,8 @@ class CurlFreeGPR(object):
 
         options = {
             "initial_simplex": simplex0,
-            "fatol": fatol,
-            "xatol": xatol
+            "fatol": 5,
+            "xatol": 0.1
         }
         
         self.i = 0
@@ -584,7 +610,7 @@ class CurlFreeGPR(object):
         self.plot_Emode_2ptcorr(self.Xtest, self.Ytest, Y2=self.Ytest - self.fbar_s, save=True)
         self.plot_xiplus_2d(self.Xtest, self.Ytest, Y2=self.fbar_s, save=True)
         
-        nAvg = 30
+        nAvg = 50
         with open(os.path.join(self.outdir, "params.out"), mode='a+') as file:
             file.write(f"Mean of first {nAvg} points (Emode (Observed)): {np.nanmean(self.xiE[:nAvg])}\n")
             file.write(f"Mean of first {nAvg} points (Bmode (Observed)): {np.nanmean(self.xiB[:nAvg])}\n")
@@ -596,16 +622,16 @@ class CurlFreeGPR(object):
         np.savez(
             os.path.join(self.outdir, f"{self.nExposure}.npz"),
             fbar_s=self.fbar_s,
-            nLML=self.nLML,
-            chisq=self.chisq,
-            theta=np.array(self.theta),
-            theta0=np.array(self.theta0),
+#             nLML=self.nLML,
+#             chisq=self.chisq,
+#             theta=np.array(self.theta),
+#             theta0=np.array(self.theta0),
             random_state=self.random_state,
             nExposure=self.nExposure,
             nTrain=self.nTrain,
             nTest=self.nTest,
             nData=self.nData,
-            nParams=self.nParams,
+#             nParams=self.nParams,
             X=self.X,
             Xtrain=self.Xtrain,
             Xtest=self.Xtest,
@@ -666,7 +692,13 @@ class CurlFreeGPR(object):
         
         u, v, dx, dy, arrowScale = residInPixels(X[:, 0], X[:, 1], Y[:, 0], Y[:, 1], E[:, 0], binpix=binpix)
 
-        step = np.min(np.abs(np.diff(u)))
+        # This line has been replaced because sometimes this step happens to be zero and messes it all up
+        # Removing all the points from np.diff(u) that are zero seems to have little to no effect on the
+        # resulting plot and helps get rid of this fairly common error.
+        # 31 January 2020
+        # step = np.min(np.abs(np.diff(u)))
+        step = np.min(np.abs(np.diff(u)[np.diff(u) != 0]))
+        
         ix = np.array( np.floor(u/step+0.1), dtype=int)
         iy = np.array( np.floor(v/step+0.1), dtype=int)
         ix = ix - np.min(ix)
