@@ -6,14 +6,14 @@ import astropy.constants as c
 import matplotlib.pyplot as plt
 
 def astrometricError(
-        x, y, dx, dy, err,
-        x2=None, y2=None, dx2=None, dy2=None, err2=None,
-        title1="Observed", title2="GPR Applied",
-        minPoints=100,
-        pixelsPerBin=500,
-        maxErr=50*u.mas,
-        scale=350*u.mas,
-        savedir=None
+    x, y, dx, dy, err,
+    x2=None, y2=None, dx2=None, dy2=None, err2=None,
+    title1="Observed", title2="GPR Applied",
+    minPoints=100,
+    pixelsPerBin=500,
+    maxErr=50*u.mas,
+    scale=350*u.mas,
+    savedir=None
     ):
     """
     Plots the error on each star as a function of sky position.
@@ -40,6 +40,9 @@ def astrometricError(
         maxErr -- (astropy.units.quantity.Quantity) (scalar) largest error that a binned vector can have and still be plotted. Avoids cluttering the plot with noisy arrows.
         scale -- (astrpoy.units.quantity.Quantity) (scalar) specifies the scale parameter for the quiver plot
         savedir -- (str) specifies the path to save the plot pdf to
+
+    Returns:
+        None
     """
     
     # Check that scale is an astropy quantity object
@@ -174,15 +177,17 @@ def astrometricError(
     plt.ylim((np.min(y) - xyBuffer).value, (np.max(y) + xyBuffer).value)
     
     if savedir is not None:
-        plt.savefig(os.path.join(savedir, "astroRes.pdf"))
+        if np.all([arr is not None for arr in [x2, y2, dx2, dy2, err2]]):
+            extension = "compare_"
+        plt.savefig(os.path.join(savedir, f"{extension}AstroRes.pdf"))
 
     plt.show()
     
 def calcPixelGrid(
-        x, y, dx, dy, err,
-        minPoints=100,
-        pixelsPerBin=500,
-        maxErr=50*u.mas
+    x, y, dx, dy, err,
+    minPoints=100,
+    pixelsPerBin=500,
+    maxErr=50*u.mas
     ):
     """
     Calculates a pixel grid to make a weighted and binned 2d vector diagram.
@@ -194,8 +199,7 @@ def calcPixelGrid(
         y -- (astropy.units.quantity.Quantity) (N,) specifies y position
         dx -- (astropy.units.quantity.Quantity) (N,) specifies dx vector
         dy -- (astropy.units.quantity.Quantity) (N,) specifies dy vector
-        err -- (astropy.units.quantity.Quantity) (N,) specifies error for
-each vector (dx, dy)
+        err -- (astropy.units.quantity.Quantity) (N,) specifies error for each vector (dx, dy)
     
     Keyword Arguments:
         minPoints -- (int) Minimum number of max plots that will be plotted
@@ -523,7 +527,7 @@ def vcorr(u, v, dx, dy, rmin=5./3600., rmax=1.5, dlogr=0.05):
     xi_z2 - <vx1 vx2 - vy1 vy2 + 2 i vx1 vy2>
     """
 
-#     print("Length ",len(u))
+    # print("Length ",len(u))
     # Get index arrays that make all unique pairs
     i1, i2 = np.triu_indices(len(u))
     # Omit self-pairs
@@ -552,7 +556,7 @@ def vcorr(u, v, dx, dy, rmin=5./3600., rmax=1.5, dlogr=0.05):
     xiz2 = np.histogram(logdr, bins=bins, range=hrange, weights=vvec)[0]/counts
 
     # Now rotate into radial / perp components
-#     print(type(vvec),type(dr)) ###
+    # print(type(vvec),type(dr)) ###
     tmp = vvec * np.conj(dr)
     vvec = tmp * np.conj(dr)
     dr = dr.real*dr.real + dr.imag*dr.imag
@@ -576,7 +580,7 @@ def vcorr2d(u, v, dx, dy, rmax=1., bins=513):
 
     hrange = [ [-rmax,rmax], [-rmax,rmax] ]
 
-#     print("Length ",len(u))
+    # print("Length ",len(u))
     # Get index arrays that make all unique pairs
     i1, i2 = np.triu_indices(len(u))
     # Omit self-pairs
@@ -605,14 +609,14 @@ def calcDivCurl(x, y, dx, dy):
     Given vector displacement (dx, dy) defined on identical 2d grids, return arrays giving divergence and curl of the vector field. These will have NaN in pixels without useful info.
     
     Arguments:
-        x --
-        y --
-        dx --
-        dy --
+        x -- (astropy.units.quantity.Quantity) (N,) specifies weighted and binned x position
+        y -- (astropy.units.quantity.Quantity) (N,) specifies weighted and binned y position
+        dx -- (astropy.units.quantity.Quantity) (N,) specifies weighted and binned dx vector
+        dy -- (astropy.units.quantity.Quantity) (N,) specifies weighted and binned dy vector
     
     Return:
-        div --
-        curl --
+        div -- (np.ndarray) (2dim) curl of the vector field
+        curl -- (np.ndarray) (2dim) divergence of the vector field
     """
 
     # This line has been replaced because sometimes this line happens to be zero and messes everything up. Removing all the points from np.diff(x) that are zero seems to have little to no effect on the resulting plot and helps get rid of this fairly frequent error.
@@ -648,3 +652,177 @@ def calcDivCurl(x, y, dx, dy):
     curl = np.where(use, dydx - dxdy, np.nan)
     
     return div, curl
+
+def DivCurl(
+    x, y, dx, dy, err,
+    x2=None, y2=None, dx2=None, dy2=None, err2=None,
+    title1="Observed", title2="GPR Applied",
+    minPoints=100,
+    pixelsPerBin=1000,
+    maxErr=50*u.mas,
+    scale=50,
+    savedir=None
+    ):
+    """ 
+    Make 2d divergence and curl plots for the supplied vector fields.
+
+    Vector field is assumed to be samples from a grid. Plots the divergence and curl of two different sets of data. This is often useful when plotting the observed data and also the data after the GPR has been applied.
+
+    Arguments:
+        x -- (astropy.units.quantity.Quantity) (N,) specifies x position
+        y -- (astropy.units.quantity.Quantity) (N,) specifies y position
+        dx -- (astropy.units.quantity.Quantity) (N,) specifies dx vector
+        dy -- (astropy.units.quantity.Quantity) (N,) specifies dy vector
+        err -- (astropy.units.quantity.Quantity) (N,) specifies error for each vector (dx, dy)
+        
+    Keyword Arguments:
+        x2 -- (astropy.units.quantity.Quantity) (N,) specifies x position
+        y2 -- (astropy.units.quantity.Quantity) (N,) specifies y position
+        dx2 -- (astropy.units.quantity.Quantity) (N,) specifies dx vector
+        dy2 -- (astropy.units.quantity.Quantity) (N,) specifies dy vector
+        err2 -- (astropy.units.quantity.Quantity) (N,) specifies error for each vector (dx, dy)
+        title1 -- (str) Title of the first plot (x, y, etc.)
+        title2 -- (str) TItle of the secnod plot (x2, y2, etc.)
+        minPoints -- (int) Minimum number of max plots that will be plotted
+        pixelsPerBin -- (int) number of pixels that are represented by one bin
+        maxErr -- (astropy.units.quantity.Quantity) (scalar) largest error that a binned vector can have and still be plotted. Avoids cluttering the plot with noisy points.
+        scale -- (int) (scalar) dynamic range (-scale, scale) for the imshow plots
+        savedir -- (str) specifies the path to save the plot pdf to
+
+    Returns:
+        None
+    """
+
+    # Calculate pixel grid
+    x, y, dx, dy, errors, cellSize = \
+        plotGPR.calcPixelGrid(
+            x, y, dx, dy, err,
+            minPoints=minPoints,
+            pixelsPerBin=pixelsPerBin,
+            maxErr=maxErr)
+    RMS_x = f"RMS x: {np.round(errors[0].value, 1)} {errors[0].unit}"
+    RMS_y = f"RMS y: {np.round(errors[1].value, 1)} {errors[1].unit}"
+    noise = f"Noise: {np.round(errors[2].value, 1)} {errors[2].unit}"
+
+    # Calculate div and curl
+    div, curl = plotGPR.calcDivCurl(x, y, dx, dy)
+    vardiv = np.sqrt(gbutil.clippedMean(div[div == div], 5.)[1])
+    varcurl = np.sqrt(gbutil.clippedMean(curl[div == div], 5.)[1])
+    
+    if np.all([arr is not None for arr in [x2, y2, dx2, dy2, err2]]):
+        
+        # Calculate second pixel grid
+        x2, y2, dx2, dy2, errors2, cellSize2 = \
+            plotGPR.calcPixelGrid(
+                x2, y2, dx2, dy2, err2,
+                minPoints=minPoints,
+                pixelsPerBin=pixelsPerBin,
+                maxErr=maxErr)
+        RMS_x2 = f"RMS x: {np.round(errors2[0].value, 1)} {errors2[0].unit}"
+        RMS_y2 = f"RMS y: {np.round(errors2[1].value, 1)} {errors2[1].unit}"
+        noise2 = f"Noise: {np.round(errors2[2].value, 1)} {errors2[2].unit}"
+        
+        # Calculate second div and curl
+        div2, curl2 = plotGPR.calcDivCurl(x2, y2, dx2, dy2)
+        vardiv2 = np.sqrt(gbutil.clippedMean(div2[div2 == div2], 5.)[1])
+        varcurl2 = np.sqrt(gbutil.clippedMean(curl2[div2 == div2], 5.)[1])
+        
+        # Create plot
+        fig, axes = plt.subplots(
+            nrows=2, ncols=2,
+            sharex=True, sharey=True,
+            figsize=(12, 12))
+        fig.subplots_adjust(wspace=0.1)
+        fig.subplots_adjust(hspace=0)
+        
+        
+        # First divergence plot
+        divplot = axes[0, 0].imshow(
+            div,
+            origin="lower",
+            cmap="Spectral",
+            vmin=-scale,
+            vmax=scale)
+        axes[0, 0].set_title("Divergence", fontsize=14)
+        axes[0, 0].text(0.2, 22, f"RMS\n{np.round(vardiv, 2)}", fontsize=12)
+        axes[0, 0].axis("off")
+        
+        # First curl plot
+        curlplot = axes[0, 1].imshow(
+            curl,
+            origin="lower",
+            cmap="Spectral",
+            vmin=-scale,
+            vmax=scale)
+        axes[0, 1].set_title("Curl", fontsize=14)
+        axes[0, 1].text(22, 22, f"RMS\n{np.round(varcurl, 2)}", fontsize=12)
+        axes[0, 1].axis("off")
+        
+        # Second divergence plot
+        divplot = axes[1, 0].imshow(
+            div2,
+            origin="lower",
+            cmap="Spectral",
+            vmin=-scale,
+            vmax=scale)
+        axes[1, 0].set_title("Divergence", fontsize=14)
+        axes[1, 0].text(0.2, 22, f"RMS\n{np.round(vardiv2, 2)}", fontsize=12)
+        axes[1, 0].axis("off")
+        
+        # Second curl plot
+        curlplot = axes[1, 1].imshow(
+            curl2,
+            origin="lower",
+            cmap="Spectral",
+            vmin=-scale,
+            vmax=scale)
+        axes[1, 1].set_title("Curl", fontsize=14)
+        axes[1, 1].text(22, 22, f"RMS\n{np.round(varcurl2, 2)}", fontsize=12)
+        axes[1, 1].axis("off")
+        
+        # Titles and colorbar
+        axes[0, 0].text(22.5, 27, title1, fontsize=20)
+        axes[1, 0].text(22.5, 27, title2, fontsize=20)
+        plt.suptitle("Divergence and Curl Fields", fontsize=20)
+        fig.colorbar(divplot, ax=fig.get_axes())
+        
+    else:
+        # Create plot
+        fig, axes = plt.subplots(
+            nrows=1, ncols=2,
+            sharex=True, sharey=True,
+            figsize=(16, 8))
+
+        # Divergence plot
+        divplot = axes[0].imshow(
+            div,
+            origin="lower",
+            cmap="Spectral",
+            vmin=-scale,
+            vmax=scale)
+        axes[0].set_title("Divergence", fontsize=14)
+        axes[0].text(0.2, 22, f"RMS\n{np.round(vardiv, 2)}", fontsize=12)
+        axes[0].axis("off")
+        
+        # Curl plot
+        curlplot = axes[1].imshow(
+            curl,
+            origin="lower",
+            cmap="Spectral",
+            vmin=-scale,
+            vmax=scale)
+        axes[1].set_title("Curl", fontsize=14)
+        axes[1].text(22, 22, f"RMS\n{np.round(varcurl, 2)}", fontsize=12)
+        axes[1].axis("off")
+        
+        fig.colorbar(divplot, ax=fig.get_axes())
+        plt.suptitle("Divergence and Curl Fields", fontsize=20)
+
+    if savedir is not None:
+        if np.all([arr is not None for arr in [x2, y2, dx2, dy2, err2]]):
+            extension = "compare_"
+        else:
+            extension = ""
+        plt.savefig(os.path.join(savedir, f"{extension}DivCurl.pdf"))
+
+    plt.show()
