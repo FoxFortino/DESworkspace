@@ -4,7 +4,7 @@ import numpy as np
 import astropy.units as u
 import matplotlib.pyplot as plt
 
-def astrometricError(
+def AstrometricError(
     x, y, dx, dy, err,
     x2=None, y2=None, dx2=None, dy2=None, err2=None,
     title1="Observed", title2="GPR Applied",
@@ -12,7 +12,7 @@ def astrometricError(
     pixelsPerBin=500,
     maxErr=50*u.mas,
     scale=350*u.mas,
-    arrowScale=50*u.mas
+    arrowScale=50*u.mas,
     savedir=None
     ):
     """
@@ -225,7 +225,7 @@ def DivCurl(
 
     # Calculate pixel grid
     x, y, dx, dy, errors, cellSize = \
-        plotGPR.calcPixelGrid(
+        calcPixelGrid(
             x, y, dx, dy, err,
             minPoints=minPoints,
             pixelsPerBin=pixelsPerBin,
@@ -243,7 +243,7 @@ def DivCurl(
         
         # Calculate second pixel grid
         x2, y2, dx2, dy2, errors2, cellSize2 = \
-            plotGPR.calcPixelGrid(
+            calcPixelGrid(
                 x2, y2, dx2, dy2, err2,
                 minPoints=minPoints,
                 pixelsPerBin=pixelsPerBin,
