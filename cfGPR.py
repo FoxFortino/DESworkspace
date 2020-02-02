@@ -322,8 +322,8 @@ class CurlFreeGPR(object):
                 penalty = 0
                 
         self.predict(self.Xtest)
-#         self.get_chisq(self.Ytest, self.fbar_s, self.Etest)
-#         return self.chisq + penalty
+        # self.get_chisq(self.Ytest, self.fbar_s, self.Etest)
+        # return self.chisq + penalty
 
         u, v, dx, dy = self.Xtest[:, 0], self.Xtest[:, 1], self.Ytest[:, 0] - self.fbar_s[:, 0], self.Ytest[:, 1] - self.fbar_s[:, 1]
         logr, xiplus, ximinus, xicross, xiz2 = vcorr(u, v, dx, dy)
@@ -336,7 +336,7 @@ class CurlFreeGPR(object):
         xiB = 0.5 * (xiplus - ximinus) + integral
         xiE = xiplus - xiB
     
-#         print(np.nanmean(xiE[:50]), penalty)
+        # print(np.nanmean(xiE[:50]), penalty)
         return np.nanmean(xiE[:50]) + penalty
     
     def correlation_fit(self, rmax=0.3, bins=75, fn=None, p0=None, bounds=None):
