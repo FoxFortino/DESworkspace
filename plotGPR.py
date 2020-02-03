@@ -541,7 +541,7 @@ def Correlation(
     plt.legend()
     plt.show()
     
-    if savedir is not None:
+    if saveDir is not None:
         if np.all([arr is not None for arr in [x2, y2, dx2, dy2, err2]]):
             extension = "compare_"
         else:
