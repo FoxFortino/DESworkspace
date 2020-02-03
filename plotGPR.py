@@ -452,7 +452,7 @@ def Correlation(
             r,
             data,
             f"{color}{marker}",
-            label=f"{title} {corr}",
+            label=f"{corr} {title}",
             alpha=0.5)
             
     for i, corr in enumerate(corrTypes):
