@@ -480,7 +480,7 @@ def Correlation(
             std2 = np.nanstd(corrData[corr][2][ind])
             ratio = np.abs(avg / avg2)
             corrData[corr].append(avg2)
-            corrData[corr].append(std)
+            corrData[corr].append(std2)
             corrData[corr].append(ratio)
             plt.text(0.11, 285-15*i,
                  f"Ratio {corr:<6}: {np.round(ratio, 3)}",
