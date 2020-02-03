@@ -429,6 +429,7 @@ def Correlation(
         if data2:
             corrData[corrType].append(xiplus2)
     if ximinus_ON:
+        corrType = "xi_-"
         corrTypes.append(corrType)
         corrData[corrType] = [ximinus, "c"]
         if data2:
