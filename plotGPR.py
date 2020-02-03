@@ -514,7 +514,7 @@ def Correlation(
         
         ratios = [f"{np.round(corrData[corr][7], 3):<10}"
                 for corr in corrTypes[1:]]
-        ratiotitle = "Ratio"
+        ratiotitle = "Mean Ratio"
         ratios.insert(0, f"{ratiotitle:<20}")
         
     corrInfo = f"For the first {len(ind)} points..." + "\n"
