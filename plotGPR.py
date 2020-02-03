@@ -15,7 +15,7 @@ def AstrometricError(
     maxErr=50*u.mas,
     scale=350*u.mas,
     arrowScale=50*u.mas,
-    savedir=None
+    saveDir=None
     ):
     """
     Plots the error on each star as a function of sky position.
@@ -177,11 +177,13 @@ def AstrometricError(
     xyBuffer = 0.05*u.deg
     plt.xlim((np.min(x) - xyBuffer).value, (np.max(x) + xyBuffer).value)
     plt.ylim((np.min(y) - xyBuffer).value, (np.max(y) + xyBuffer).value)
-    
-    if savedir is not None:
+
+    if saveDir is not None:
         if np.all([arr is not None for arr in [x2, y2, dx2, dy2, err2]]):
             extension = "compare_"
-        plt.savefig(os.path.join(savedir, f"{extension}AstroRes.pdf"))
+        else:
+            extension = ""
+        plt.savefig(os.path.join(saveDir, f"{extension}AstroRes.pdf"))
 
     plt.show()
     
@@ -193,7 +195,7 @@ def DivCurl(
     pixelsPerBin=1000,
     maxErr=50*u.mas,
     scale=50,
-    savedir=None
+    saveDir=None
     ):
     """ 
     Make 2d divergence and curl plots for the supplied vector fields.
@@ -350,49 +352,37 @@ def DivCurl(
         fig.colorbar(divplot, ax=fig.get_axes())
         plt.suptitle("Divergence and Curl Fields", fontsize=20)
 
-    if savedir is not None:
+    if saveDir is not None:
         if np.all([arr is not None for arr in [x2, y2, dx2, dy2, err2]]):
             extension = "compare_"
         else:
             extension = ""
-        plt.savefig(os.path.join(savedir, f"{extension}DivCurl.pdf"))
+        plt.savefig(os.path.join(saveDir, f"{extension}DivCurl.pdf"))
 
     plt.show()
 
-def plot_Emode_2ptcorr(
+def Correlation(
     x, y, dx, dy,
     x2=None, y2=None, dx2=None, dy2=None,
     title1="Observed", title2="GPR Applied",
-    xiE_ON=True, xiB_ON=False,
+    xiE_ON=True, xiB_ON=True,
     xiplus_ON=False, ximinus_ON=False,
     xicross_ON=False, xiz2_ON=False,
     rmin=5*u.arcsec, rmax=1.5*u.deg, dlogr=0.05,
     ylim=(-50, 500),
-    sep=0.01*u.deg, avgLine=True,
-    savedir=None
+    sep=1e-2*u.deg, avgLine=True,
+    printFile=None, saveDir=None
     ):
 
     # Calculate correlation functions
     correlations = calcCorrelation(x, y, dx, dy,
-                                  rmin=rmin, rmax=rmax,
-                                  dlogr=dlogr)
+                                   rmin=rmin, rmax=rmax,
+                                   dlogr=dlogr)
     logr, xiplus, ximinus, xicross, xiz2, xiE, xiB = correlations
     r = np.exp(logr)
 
-    # Check for second set of data:
-    if np.all([arr is not None for arr in [x2, y2, dx2, dy2]]):
-        data2 = True
-        correlations2 = calcCorrelation(x, y, dx, dy,
-                                      rmin=rmin, rmax=rmax,
-                                      dlogr=dlogr)
-        logr2, xiplus2, ximinus2, xicross2, xiz22, xiE2, xiB2 = correlations2
-        r2 = np.exp(logr2)
-        assert r2 == r, "r and r2 are not the same"
-    else:
-        data2 = False
-
     # Calculate the indices to average together for each correlation function
-    ind = r[r < sep.to(u.deg).value]
+    ind = np.where(r <= sep.to(u.deg).value)[0]
 
     plt.figure(figsize=(10, 10))
     plt.title("Angle Averaged 2-Point Correlation Function of Astrometric Residuals")
@@ -402,97 +392,165 @@ def plot_Emode_2ptcorr(
     avgs = {}
     stds = {}
     
+    # Check for second set of data:
+    if np.all([arr is not None for arr in [x2, y2, dx2, dy2]]):
+        data2 = True
+        correlations2 = calcCorrelation(x2, y2, dx2, dy2,
+                                        rmin=rmin, rmax=rmax,
+                                        dlogr=dlogr)
+        logr2, xiplus2, ximinus2, xicross2, xiz22, xiE2, xiB2 = correlations2
+        r2 = np.exp(logr2)
+        assert np.all(r2 == r), "r and r2 are not the same"
+        
+        avgs2 = {}
+        stds2 = {}
+        ratios = {}
+    else:
+        data2 = False
+        
+    corrData = {}
+    corrTypes = []
     if xiE_ON:
-        plt.semilogx(r, xiE, "r.", label=f"E-Mode {title1}")
-        avgs["E-Mode"] = np.nanmean(xiE[ind])
-        stds["E-Mode"] = np.std(xiE[ind])
-
+        corrType = "E-Mode"
+        corrTypes.append(corrType)
+        corrData[corrType] = [xiE, "r"]
+        if data2:
+            corrData[corrType].append(xiE2)
     if xiB_ON:
-        plt.semilogx(r, xiB, "b.", label=f"B-Mode {title1}")
-        avgs["B-Mode"] = np.nanmean(xiB[ind])
-        stds["B-Mode"] = np.std(xiB[ind])
-
+        corrType = "B-Mode"
+        corrTypes.append(corrType)
+        corrData[corrType] = [xiB, "b"]
+        if data2:
+            corrData[corrType].append(xiB2)
     if xiplus_ON:
-        plt.semilogx(r, xiplus, "g.", label=f"xi_+ {title1}")
-        avgs["xi_+"] = np.nanmean(xiplus[ind])
-        stds["xi_+"] = np.std(xiplus[ind])
-
+        corrType = "xi_+"
+        corrTypes.append(corrType)
+        corrData[corrType] = [xiplus, "g"]
+        if data2:
+            corrData[corrType].append(xiplus2)
     if ximinus_ON:
-        plt.semilogx(r, ximinus, "c.", label=f"xi_- {title1}")
-        avgs["xi_-"] = np.nanmean(ximinus[ind])
-        stds["xi_-"] = np.std(ximinus[ind])
-
+        corrTypes.append(corrType)
+        corrData[corrType] = [ximinus, "c"]
+        if data2:
+            corrData[corrType].append(ximinus2)
     if xicross_ON:
-        plt.semilogx(r, xicross, "m.", label=f"xi_x {title1}")
-        avgs["xi_x"] = np.nanmean(xicross[ind])
-        stds["xi_x"] = np.std(xicross[ind])
-
+        corrType = "xi_x"
+        corrTypes.append(corrType)
+        corrData[corrType] = [xicross, "m"]
+        if data2:
+            corrData[corrType].append(xicross2)
     if xiz2_ON:
-        plt.semilogx(r, xiz2, "y.", label=f"xi_z^2 {title1}")
-        avgs["xi_z^2"] = np.nanmean(xiz2[ind])
-        stds["xi_z^2"] = np.std(xiz2[ind])
+        corrType = "xi_z^2"
+        corrTypes.append(corrType)
+        corrData[corrType] = [xiz2, "y"]
+        if data2:
+            corrData[corrType].append(xiz22)
+            
+            
+    def plotCorr(r, data, color, marker, title, corr):
+        plt.semilogx(
+            r,
+            data,
+            f"{color}{marker}",
+            label=f"{title} {corr}",
+            alpha=0.5)
+            
+    for i, corr in enumerate(corrTypes):
+        plotCorr(
+            r,
+            corrData[corr][0],
+            corrData[corr][1],
+            ".",
+            title1,
+            corr)
+        avg = np.nanmean(corrData[corr][0][ind])
+        std = np.nanstd(corrData[corr][0][ind])
+        corrData[corr].append(avg)
+        corrData[corr].append(std)
+        
+        if data2:
+            plotCorr(
+                r,
+                corrData[corr][2],
+                corrData[corr][1],
+                "o",
+                title2,
+                corr)
+            avg2 = np.nanmean(corrData[corr][2][ind])
+            std2 = np.nanstd(corrData[corr][2][ind])
+            ratio = np.abs(avg / avg2)
+            corrData[corr].append(avg2)
+            corrData[corr].append(std)
+            corrData[corr].append(ratio)
+            plt.text(0.11, 285-15*i,
+                 f"Ratio {corr:<6}: {np.round(ratio, 3)}",
+                 **{"fontname": "monospace"})
 
-    for corr, avg in avgs.items():
-        print(f"Mean of first {len(ind)} points {corr} {title1}: {avg}")
 
-    for corr, std in stds.items():
-        print(f"Mean of first {len(ind)} points {corr} {title1}: {std}")
+    corrTypes.insert(0, " "*20)
+    data2_int = int(np.logical_not(data2))
+    means = [f"{np.round(corrData[corr][3-data2_int], 3):<10}"
+             for corr in corrTypes[1:]]
+    stds = [f"{np.round(corrData[corr][4-data2_int], 3):<10}"
+            for corr in corrTypes[1:]]
+    
+    meantitle1 = "Mean " + title1
+    means.insert(0, f"{meantitle1:<20}")
+    
+    stdtitle1 = "Std  " + title1
+    stds.insert(0, f"{stdtitle1:<20}")
+    
+    if data2:
+        means2 = [f"{np.round(corrData[corr][5], 3):<10}" 
+                  for corr in corrTypes[1:]]
+        stds2 = [f"{np.round(corrData[corr][6], 3):<10}"
+                 for corr in corrTypes[1:]]
+        
+        meantitle2 = "Mean " + title2
+        means2.insert(0, f"{meantitle2:<20}")
+        
+        stdtitle2 = "Std  " + title2
+        stds2.insert(0, f"{stdtitle2:<20}")
+        
+        ratios = [f"{np.round(corrData[corr][7], 3):<10}"
+                for corr in corrTypes[1:]]
+        ratiotitle = "Ratio"
+        ratios.insert(0, f"{ratiotitle:<20}")
+        
+    corrInfo = f"For the first {len(ind)} points..." + "\n"
+    corrInfo += "".join([f"{corr:<10}" for corr in corrTypes]) + "\n"
+    if data2:
+        corrInfo += "".join(means) + "\n"
+        corrInfo += "".join(means2) + "\n\n"
+        corrInfo += "".join(stds) + "\n"
+        corrInfo += "".join(stds2) + "\n\n"
+        corrInfo += "".join(ratios)
+    else:
+        corrInfo += "".join(means) + "\n"
+        corrInfo += "".join(stds) + "\n"
+    print(corrInfo)
 
-    
+    plt.xlim((r[0], r[-1]))
+    plt.ylim((ylim[0], ylim[1]))
+            
+    plt.axhline(y=0, c="k")
+    if avgLine:
+        plt.axvline(x=r[ind[-1]+1], c="k", ls=":")
 
-    
-    # # Plot xiE
-    # plt.semilogx(np.exp(logr), self.xiE, 'r.', label="E Mode (Observed)")
-    # print(f"Mean of first {nAvg} points (Emode (Observed)): ", np.nanmean(self.xiE[:nAvg]))
-
-    # if Bmode:
-    #     # Plot xiB
-    #     plt.title("E and B Mode Correlation")
-    #     plt.semilogx(np.exp(logr), self.xiB, 'b.', label="B Mode (Observed)")
-    #     plt.legend(framealpha=0.3)
-    #     print(f"Mean of first {nAvg} points (Bmode (Observed)): ", np.nanmean(self.xiB[:nAvg]))
-    
-    
-    # if Y2 is not None:
-        
-    #     # Solve for weighted and pixelized residuals, as well as angle averaged correlation function.
-    #     u, v, dx, dy = X[:, 0], X[:, 1], Y2[:, 0], Y2[:, 1]
-    #     logr2, xiplus2, ximinus2, xicross2, xiz22 = vcorr(u, v, dx, dy)
-        
-    #     # Calculate xiE and xiB
-    #     dlogr2 = np.zeros_like(logr2)
-    #     dlogr2[1:-1] = 0.5 * (logr2[2:] - logr2[:-2])
-    #     tmp2 = np.array(ximinus2) * dlogr2
-    #     integral2 = np.cumsum(tmp2[::-1])[::-1]
-    #     self.xiB2 = 0.5 * (xiplus2 - ximinus2) + integral2
-    #     self.xiE2 = xiplus2 - self.xiB2
-        
-    #     # Plot xiE
-    #     plt.semilogx(np.exp(logr2), self.xiE2, 'rx', label="E Mode (GPR Applied)")    
-    #     print(f"Mean of first {nAvg} points (Emode (GPR Applied)): ", np.nanmean(self.xiE2[:nAvg]))
-        
-    #     if Bmode:
-    #         # Plot xiB
-    #         plt.semilogx(np.exp(logr2), self.xiB2, 'bx', label='B Mode (GPR Applied)')
-    #         print(f"Mean of first {nAvg} points (Bmode (GPR Applied)): ", np.nanmean(self.xiB2[:nAvg]))
-        
-        
-    #     plt.legend(framealpha=0.3)
-        
-    #     print(f"Ratio of E modes: {np.nanmean(self.xiE[:nAvg]) / np.nanmean(self.xiE2[:nAvg])}")
-    #     print(f"Ratio of B modes: {np.nanmean(self.xiB[:nAvg]) / np.nanmean(self.xiB2[:nAvg])}")
-
-        
-    # if plot_avg_line:
-    #     plt.axvline(x=np.exp(logr)[nAvg], color='k', linestyle='--')
-    
-    # # Show plots
-    # plt.grid()
-    
-    # if save:
-    #     plt.savefig(os.path.join(self.outdir, "Emode.pdf"))
-    
+    plt.grid()
+    plt.legend()
     plt.show()
+    
+    if savedir is not None:
+        if np.all([arr is not None for arr in [x2, y2, dx2, dy2, err2]]):
+            extension = "compare_"
+        else:
+            extension = ""
+        plt.savefig(os.path.join(savedir, f"{extension}2ptCorr.pdf"))
+        
+    if printFile is not None:
+        with open(printFile, mode='a+') as file:
+                file.write(corrInfo)
 
 def calcPixelGrid(
     x, y, dx, dy, err,
