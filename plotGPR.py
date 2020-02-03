@@ -483,8 +483,8 @@ def Correlation(
             corrData[corr].append(std2)
             corrData[corr].append(ratio)
             plt.text(0.11, 285-15*i,
-                 f"Ratio {corr:<6}: {np.round(ratio, 3)}",
-                 **{"fontname": "monospace"})
+                f"{corr:<7}: {np.round(ratio, 3)}",
+                **{"fontname": "monospace"})
 
 
     corrTypes.insert(0, " "*20)
