@@ -6,7 +6,7 @@ import numpy as np
 import astropy.units as u
 import matplotlib.pyplot as plt
 
-def AstrometricError(
+def AstrometricResiduals(
     x, y, dx, dy, err,
     x2=None, y2=None, dx2=None, dy2=None, err2=None,
     title1="Observed", title2="GPR Applied",
@@ -15,7 +15,8 @@ def AstrometricError(
     maxErr=50*u.mas,
     scale=350*u.mas,
     arrowScale=50*u.mas,
-    saveDir=None
+    savePath=None, saveExt="",
+    plotShow=True
     ):
     """
     Plots the error on each star as a function of sky position.
@@ -41,7 +42,8 @@ def AstrometricError(
         pixelsPerBin -- (int) number of pixels that are represented by one bin
         maxErr -- (astropy.units.quantity.Quantity) (scalar) largest error that a binned vector can have and still be plotted. Avoids cluttering the plot with noisy arrows.
         scale -- (astrpoy.units.quantity.Quantity) (scalar) specifies the scale parameter for the quiver plot
-        savedir -- (str) specifies the path to save the plot pdf to
+        savePath -- (str) specifies the path to save the plot pdf to
+        printShow -- (bool) whether or not to print the plots. Useful when making and saving a bunch of plots in a row.
 
     Returns:
         None
@@ -90,9 +92,15 @@ def AstrometricError(
             scale_units='xy',
             scale=scale.to(u.deg).value,
             units='x')
-        axes[0].text(-1.2, 1.4, RMS_x)
-        axes[0].text(-1.2, 1.3, RMS_y)
-        axes[0].text(-1.2, 1.2, noise)
+        axes[0].text(0.15, 0.92, RMS_x,
+                     **{"fontname": "monospace"},
+                     transform=fig.transFigure)
+        axes[0].text(0.15, 0.9, RMS_y,
+                     **{"fontname": "monospace"},
+                     transform=fig.transFigure)
+        axes[0].text(0.15, 0.88, noise,
+                     **{"fontname": "monospace"},
+                     transform=fig.transFigure)
         axes[0].set_xlabel("Sky Position (deg)", fontsize=14)
         axes[0].set_ylabel("Sky Position (deg)", fontsize=14)
         axes[0].set_aspect("equal")
@@ -100,11 +108,11 @@ def AstrometricError(
         axes[0].set_title(title1)
         axes[0].quiverkey(
             quiver,
-            0.875,
-            0.85,
+            0.45,
+            0.75,
             arrowScale.to(u.deg).value,
             f"{arrowScale.to(u.mas).value} mas",
-            coordinates='data',
+            coordinates='figure',
             color='red',
             labelpos='N',
             labelcolor='red')
@@ -120,20 +128,26 @@ def AstrometricError(
             scale_units='xy',
             scale=scale.to(u.deg).value,
             units='x')
-        axes[1].text(0.6, 1.4, RMS_x2)
-        axes[1].text(0.6, 1.3, RMS_y2)
-        axes[1].text(0.6, 1.2, noise2)
+        axes[1].text(0.80, 0.92, RMS_x2,
+                     **{"fontname": "monospace"},
+                     transform=fig.transFigure)
+        axes[1].text(0.80, 0.90, RMS_y2,
+                     **{"fontname": "monospace"},
+                     transform=fig.transFigure)
+        axes[1].text(0.80, 0.88, noise2,
+                     **{"fontname": "monospace"},
+                     transform=fig.transFigure)
         axes[1].set_xlabel("Sky Position (deg)", fontsize=14)
         axes[1].set_aspect("equal")
         axes[1].grid()
         axes[1].set_title(title2)
         axes[1].quiverkey(
             quiver,
-            0.875,
             0.85,
+            0.75,
             arrowScale.to(u.deg).value,
             f"{arrowScale.to(u.mas).value} mas",
-            coordinates='data',
+            coordinates='figure',
             color='red',
             labelpos='N',
             labelcolor='red')
@@ -142,7 +156,7 @@ def AstrometricError(
 
     else:
         # Make the quiver plot
-        plt.figure(figsize=(8, 8))
+        fig = plt.figure(figsize=(8, 8))
         quiver = plt.quiver(
             x.to(u.deg).value,
             y.to(u.deg).value,
@@ -158,14 +172,23 @@ def AstrometricError(
         # Make the quiver key and label
         quiverkey = plt.quiverkey(
             quiver,
-            0.875,
             0.85,
+            0.75,
             arrowScale.to(u.deg).value,
             f"{arrowScale.to(u.mas).value} mas",
-            coordinates='data',
+            coordinates='figure',
             color='red',
             labelpos='N',
             labelcolor='red')
+        plt.text(0.15, 0.92, RMS_x,
+                     **{"fontname": "monospace"},
+                     transform=fig.transFigure)
+        plt.text(0.15, 0.90, RMS_y,
+                     **{"fontname": "monospace"},
+                     transform=fig.transFigure)
+        plt.text(0.15, 0.88, noise,
+                     **{"fontname": "monospace"},
+                     transform=fig.transFigure)
         
         plt.title("Weighted Astrometric Residuals", fontsize=14)
         plt.xlabel("Sky Position (deg)", fontsize=14)
@@ -178,14 +201,19 @@ def AstrometricError(
     plt.xlim((np.min(x) - xyBuffer).value, (np.max(x) + xyBuffer).value)
     plt.ylim((np.min(y) - xyBuffer).value, (np.max(y) + xyBuffer).value)
 
-    if saveDir is not None:
+    
+    if savePath is not None:
+        saveFile = []
+        if saveExt is not None:
+            saveFile.append(saveExt)
         if np.all([arr is not None for arr in [x2, y2, dx2, dy2, err2]]):
-            extension = "compare_"
-        else:
-            extension = ""
-        plt.savefig(os.path.join(saveDir, f"{extension}AstroRes.pdf"))
+            saveFile.append("compare")
+        saveFile.append("AstroRes.pdf")
+        saveFile = "".join(saveFile)
+        plt.savefig(os.path.join(savePath, saveFile))
 
-    plt.show()
+    if plotShow:
+        plt.show()
     
 def DivCurl(
     x, y, dx, dy, err,
@@ -195,7 +223,8 @@ def DivCurl(
     pixelsPerBin=1000,
     maxErr=50*u.mas,
     scale=50,
-    saveDir=None
+    savePath=None, saveExt=None,
+    plotShow=True
     ):
     """ 
     Make 2d divergence and curl plots for the supplied vector fields.
@@ -221,7 +250,8 @@ def DivCurl(
         pixelsPerBin -- (int) number of pixels that are represented by one bin
         maxErr -- (astropy.units.quantity.Quantity) (scalar) largest error that a binned vector can have and still be plotted. Avoids cluttering the plot with noisy points.
         scale -- (int) (scalar) dynamic range (-scale, scale) for the imshow plots
-        savedir -- (str) specifies the path to save the plot pdf to
+        savePath -- (str) specifies the path to save the plot pdf to
+        printShow -- (bool) whether or not to print the plots. Useful when making and saving a bunch of plots in a row.
 
     Returns:
         None
@@ -278,7 +308,10 @@ def DivCurl(
             vmin=-scale,
             vmax=scale)
         axes[0, 0].set_title("Divergence", fontsize=14)
-        axes[0, 0].text(0.2, 22, f"RMS\n{np.round(vardiv, 2)}", fontsize=12)
+        axes[0, 0].text(0.35, 0.8, f"RMS\n{np.round(vardiv, 2)}",
+                        fontsize=12,
+                        **{"fontname": "monospace"},
+                        transform=fig.transFigure)
         axes[0, 0].axis("off")
         
         # First curl plot
@@ -289,7 +322,10 @@ def DivCurl(
             vmin=-scale,
             vmax=scale)
         axes[0, 1].set_title("Curl", fontsize=14)
-        axes[0, 1].text(22, 22, f"RMS\n{np.round(varcurl, 2)}", fontsize=12)
+        axes[0, 1].text(0.7, 0.8, f"RMS\n{np.round(varcurl, 2)}",
+                        fontsize=12,
+                        **{"fontname": "monospace"},
+                        transform=fig.transFigure)
         axes[0, 1].axis("off")
         
         # Second divergence plot
@@ -300,7 +336,10 @@ def DivCurl(
             vmin=-scale,
             vmax=scale)
         axes[1, 0].set_title("Divergence", fontsize=14)
-        axes[1, 0].text(0.2, 22, f"RMS\n{np.round(vardiv2, 2)}", fontsize=12)
+        axes[1, 0].text(0.35, 0.42, f"RMS\n{np.round(vardiv2, 2)}",
+                        fontsize=12,
+                        **{"fontname": "monospace"},
+                        transform=fig.transFigure)
         axes[1, 0].axis("off")
         
         # Second curl plot
@@ -311,12 +350,17 @@ def DivCurl(
             vmin=-scale,
             vmax=scale)
         axes[1, 1].set_title("Curl", fontsize=14)
-        axes[1, 1].text(22, 22, f"RMS\n{np.round(varcurl2, 2)}", fontsize=12)
+        axes[1, 1].text(0.7, 0.42, f"RMS\n{np.round(varcurl2, 2)}",
+                        fontsize=12,
+                        **{"fontname": "monospace"},
+                        transform=fig.transFigure)
         axes[1, 1].axis("off")
         
         # Titles and colorbar
-        axes[0, 0].text(22.5, 27, title1, fontsize=20)
-        axes[1, 0].text(22.5, 27, title2, fontsize=20)
+        axes[0, 0].text(0.38, 0.85, title1, fontsize=20,
+                        transform=fig.transFigure)
+        axes[1, 0].text(0.38, 0.48, title2, fontsize=20,
+                        transform=fig.transFigure)
         plt.suptitle("Divergence and Curl Fields", fontsize=20)
         fig.colorbar(divplot, ax=fig.get_axes())
         
@@ -335,7 +379,10 @@ def DivCurl(
             vmin=-scale,
             vmax=scale)
         axes[0].set_title("Divergence", fontsize=14)
-        axes[0].text(0.2, 22, f"RMS\n{np.round(vardiv, 2)}", fontsize=12)
+        axes[0].text(0.35, 0.7, f"RMS\n{np.round(vardiv, 2)}",
+                     fontsize=12,
+                     **{"fontname": "monospace"},
+                     transform=fig.transFigure)
         axes[0].axis("off")
         
         # Curl plot
@@ -346,20 +393,27 @@ def DivCurl(
             vmin=-scale,
             vmax=scale)
         axes[1].set_title("Curl", fontsize=14)
-        axes[1].text(22, 22, f"RMS\n{np.round(varcurl, 2)}", fontsize=12)
+        axes[1].text(0.7, 0.7, f"RMS\n{np.round(varcurl, 2)}",
+                     fontsize=12,
+                     **{"fontname": "monospace"},
+                     transform=fig.transFigure)
         axes[1].axis("off")
         
         fig.colorbar(divplot, ax=fig.get_axes())
         plt.suptitle("Divergence and Curl Fields", fontsize=20)
 
-    if saveDir is not None:
+    if savePath is not None:
+        saveFile = []
+        if saveExt is not None:
+            saveFile.append(saveExt)
         if np.all([arr is not None for arr in [x2, y2, dx2, dy2, err2]]):
-            extension = "compare_"
-        else:
-            extension = ""
-        plt.savefig(os.path.join(saveDir, f"{extension}DivCurl.pdf"))
+            saveFile.append("compare")
+        saveFile.append("DivCurl.pdf")
+        saveFile = "".join(saveFile)
+        plt.savefig(os.path.join(savePath, saveFile))
 
-    plt.show()
+    if plotShow:
+        plt.show()
 
 def Correlation(
     x, y, dx, dy,
@@ -371,7 +425,9 @@ def Correlation(
     rmin=5*u.arcsec, rmax=1.5*u.deg, dlogr=0.05,
     ylim=(-50, 500),
     sep=1e-2*u.deg, avgLine=True,
-    printFile=None, saveDir=None
+    printFile=None,
+    savePath=None, saveExt=None,
+    plotShow=True
     ):
 
     # Calculate correlation functions
@@ -400,7 +456,7 @@ def Correlation(
                                         dlogr=dlogr)
         logr2, xiplus2, ximinus2, xicross2, xiz22, xiE2, xiB2 = correlations2
         r2 = np.exp(logr2)
-        assert np.all(r2 == r), "r and r2 are not the same"
+        assert np.allclose(r, r2, equal_nan=True), "r and r2 are not the same"
         
         avgs2 = {}
         stds2 = {}
@@ -518,7 +574,8 @@ def Correlation(
         ratiotitle = "Mean Ratio"
         ratios.insert(0, f"{ratiotitle:<20}")
         
-    corrInfo = f"For the first {len(ind)} points..." + "\n"
+    corrInfo = f"{len(x)} Stars Evaluated..." + "\n"
+    corrInfo += f"For the first {len(ind)} separation bins..." + "\n"
     corrInfo += "".join([f"{corr:<10}" for corr in corrTypes]) + "\n"
     if data2:
         corrInfo += "".join(means) + "\n"
@@ -529,9 +586,8 @@ def Correlation(
     else:
         corrInfo += "".join(means) + "\n"
         corrInfo += "".join(stds) + "\n"
-    print(corrInfo)
 
-    plt.xlim((r[0], r[-1]))
+    plt.xlim((rmin.to(u.deg).value, rmax.to(u.deg).value))
     plt.ylim((ylim[0], ylim[1]))
             
     plt.axhline(y=0, c="k")
@@ -540,18 +596,123 @@ def Correlation(
 
     plt.grid()
     plt.legend()
-    plt.show()
     
-    if saveDir is not None:
-        if np.all([arr is not None for arr in [x2, y2, dx2, dy2, err2]]):
-            extension = "compare_"
-        else:
-            extension = ""
-        plt.savefig(os.path.join(savedir, f"{extension}2ptCorr.pdf"))
+    if savePath is not None:
+        saveFile = []
+        if saveExt is not None:
+            saveFile.append(saveExt)
+        if np.all([arr is not None for arr in [x2, y2, dx2, dy2]]):
+            saveFile.append("compare")
+        saveFile.append("2ptCorr.pdf")
+        saveFile = "_".join(saveFile)
+        plt.savefig(os.path.join(savePath, saveFile))
         
     if printFile is not None:
+        printFile = os.path.join(savePath, printFile)
+        try:
+            os.remove(printFile)
+        except FileExistsError:
+            pass
+
         with open(printFile, mode='a+') as file:
                 file.write(corrInfo)
+
+    if plotShow:
+        print(corrInfo)
+        plt.show()
+
+def Correlation2D(
+    x, y, dx, dy,
+    x2=None, y2=None, dx2=None, dy2=None,
+    title1="Observed", title2="GPR Applied", title3="GPR Interpolation",
+    rmax=0.3*u.deg, nBins=100,
+    vmin=-100*u.mas**2, vmax=450*u.mas**2,
+    savePath=None, saveExt=None,
+    plotShow=True
+    ):
+    
+    xiplus = calcCorrelation2D(
+        x, y, dx, dy, rmax=rmax, nBins=nBins)[0]
+    
+    if np.all([arr is not None for arr in [x2, y2, dx2, dy2]]):
+        xiplus2 = calcCorrelation2D(
+            x2, y2, dx-dx2, dy-dy2, rmax=rmax, nBins=nBins)[0]
+        
+        xiplus3 = calcCorrelation2D(
+            x2, y2, dx2, dy2, rmax=rmax, nBins=nBins)[0]
+        
+        # Create plot
+        fig, axes = plt.subplots(
+            nrows=1, ncols=3,
+            sharex=True, sharey=True,
+            figsize=(18, 6))
+        fig.subplots_adjust(wspace=0)
+        axes[0].set_ylabel("Separation Bins")
+        axes[0].set_xlabel("Separation Bins")
+        axes[1].set_xlabel("Separation Bins")
+        axes[2].set_xlabel("Separation Bins")
+        
+        im1 = axes[0].imshow(
+            xiplus,
+            origin="Lower",
+            cmap="Spectral",
+            interpolation="nearest",
+            vmin=vmin.to(u.mas**2).value,
+            vmax=vmax.to(u.mas**2).value)
+        axes[0].set_title(title1)
+
+        
+        im2 = axes[1].imshow(
+            xiplus2,
+            origin="Lower",
+            cmap="Spectral",
+            interpolation="nearest",
+            vmin=vmin.to(u.mas**2).value,
+            vmax=vmax.to(u.mas**2).value)
+        axes[1].set_title(title3)
+        
+        im3 = axes[2].imshow(
+            xiplus3,
+            origin="Lower",
+            cmap="Spectral",
+            interpolation="nearest",
+            vmin=vmin.to(u.mas**2).value,
+            vmax=vmax.to(u.mas**2).value)
+        axes[2].set_title(title2)
+        
+    else:
+        fig, ax = plt.subplots(
+            nrows=1, ncols=1,
+            sharex=True, sharey=True,
+            figsize=(6, 6))
+        fig.subplots_adjust(wspace=0)
+        ax.set_ylabel("Separation Bins")
+        ax.set_xlabel("Separation Bins")
+        
+        im1 = ax.imshow(
+            xiplus,
+            origin="Lower",
+            cmap="Spectral",
+            interpolation="nearest",
+            vmin=vmin.to(u.mas**2).value,
+            vmax=vmax.to(u.mas**2).value)
+        ax.set_title(title1)
+
+    cbar = fig.colorbar(im1, ax=fig.get_axes())
+    cbar.set_label("xi_+ Correlation (mas2)", rotation=270)
+
+    if savePath is not None:
+        saveFile = []
+        if saveExt is not None:
+            saveFile.append(saveExt)
+        if np.all([arr is not None for arr in [x2, y2, dx2, dy2]]):
+            saveFile.append("compare")
+        saveFile.append("2ptCorr2D.pdf")
+        saveFile = "".join(saveFile)
+        plt.savefig(os.path.join(savePath, saveFile))
+
+    if plotShow:
+        plt.show()
 
 def calcPixelGrid(
     x, y, dx, dy, err,
@@ -783,7 +944,7 @@ def calcCorrelation(x, y, dx, dy, rmin=5*u.arcsec, rmax=1.5*u.deg, dlogr=0.05):
     # Check that all (x, y, dx, dy, rmin, rmax) are astropy quantity objects
     if not np.all([isinstance(arr, u.quantity.Quantity) 
                    for arr in [x, y, dx, dy, rmin, rmax]]):
-        raise TypeError("All input arrays must be of type astropy.units.quantity.Quantity.")
+        raise TypeError("All input arrays and rmax and rmin must be of type astropy.units.quantity.Quantity.")
 
     # Check that x, y have the same units
     if x.unit != y.unit:
@@ -862,3 +1023,85 @@ def calcCorrelation(x, y, dx, dy, rmin=5*u.arcsec, rmax=1.5*u.deg, dlogr=0.05):
     xiE = xiplus - xiB
 
     return logr, xiplus, ximinus, xicross, xiz2, xiE, xiB
+
+
+def calcCorrelation2D(x, y, dx, dy, rmax=1*u.deg, nBins=500):
+    """
+    Produce 2d 2-point correlation functions of astrometric error.
+
+    Produce 2d 2-point correlation function of total displacement power for the supplied sample of data. Uses brute-force pair counting.
+
+    Arguments:
+        x -- (astropy.units.quantity.Quantity) (N,) specifies x position
+        y -- (astropy.units.quantity.Quantity) (N,) specifies y position
+        dx -- (astropy.units.quantity.Quantity) (N,) specifies dx vector
+        dy -- (astropy.units.quantity.Quantity) (N,) specifies dy vector
+
+    Keyword Arguments:
+        rmax -- (astropy.units.quantity.Quantity) (scalar) maximum separation radius bin. Will calculate from -rmax to rmax separation.
+        nBins -- (int) final 2d array will be of shape (nBins, nBins)
+
+    Return:
+        xiplus -- (np.ndarray) (2dim) 2pt correlation function (mas2). Is symmetric about the origin. Calculated like so: xi_+ - <vr1 vr2 + vt1 vt2> = <vx1 vx2 + vy1 vy2> 
+        counts -- (np.ndarray) (1dim) number of pairs in each separation bin
+    """
+    
+    # Check that all (x, y, dx, dy, rmin, rmax) are astropy quantity objects
+    if not np.all([isinstance(arr, u.quantity.Quantity) 
+                   for arr in [x, y, dx, dy, rmax]]):
+        raise TypeError("All input arrays and rmax must be of type astropy.units.quantity.Quantity.")
+
+    # Check that x, y have the same units
+    if x.unit != y.unit:
+        raise u.UnitsError(f"x and y arrays must have the same units but are {x.unit} and {y.unit} respectively.")
+
+    # Check that dx, dy have the same units
+    if not (dx.unit == dy.unit):
+        raise u.UnitsError(f"dx, and dy arrays must have the same units but are {dx.unit} and {dy.unit} respectively.")
+        
+    # Check that all arrays (x, y, dx, dy) are of shape (N,)
+    if not (np.all([arr.shape == x.shape for arr in [x, y, dx, dy]])
+            and np.all([arr.ndim == 1 for arr in [x, y, dx, dy]])):
+        raise TypeError(f"x, y, dx, and dy arrays must be 1 dimensional and the same shape but are {x.shape}, {y.shape}, {dx.shape}, and {dy.shape} respectively.")
+
+    if not isinstance(nBins, int):
+        raise TypeError(f"nBins must be int but is {type(nBins)}.")
+
+    # Make sure everything is in the correct units and then just take the value. Don't feel like integrating units into the calculation.
+    rmax = rmax.to(u.deg).value
+    x = x.to(u.deg).value
+    y = y.to(u.deg).value
+    dx = dx.to(u.mas).value
+    dy = dy.to(u.mas).value
+
+    hrange = [[-rmax, rmax], [-rmax, rmax]]
+
+    # Get index arrays that make all unique pairs
+    i1, i2 = np.triu_indices(len(x))
+    
+    # Omit self-pairs
+    use = i1 != i2
+    i1 = i1[use]
+    i2 = i2[use]
+    del use
+    
+    # Make separation vectors and count pairs
+    yshift = y[i2] - y[i1]
+    xshift = x[i2] - x[i1]
+    counts = np.histogram2d(xshift, yshift, bins=nBins, range=hrange)[0]
+
+    # Accumulate displacement sums
+    vec =  dx + 1j*dy
+    vvec = dx[i1] * dx[i2] + dy[i1] * dy[i2]
+    xiplus = np.histogram2d(
+        xshift,
+        yshift,
+        bins=nBins,
+        range=hrange,
+        weights=vvec)[0]
+    xiplus /= counts
+
+    # Combine pars
+    xiplus = 0.5 * (xiplus + xiplus[::-1, ::-1])
+    
+    return xiplus, counts
