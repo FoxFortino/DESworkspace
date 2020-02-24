@@ -1,7 +1,10 @@
 import GPRutils
+import vonkarmanFT as vk
 
 import numpy as np
 import astropy.units as u
+import scipy.optimize as opt
+from scipy.spatial.ckdtree import cKDTree
 
 
 class vonKarman2KernelGPR(object):
@@ -12,6 +15,8 @@ class vonKarman2KernelGPR(object):
         self.printing = printing
 
     def fit(self, params):
+        
+        self.dC.params = params
 
         self.ttt = vk.TurbulentLayer(
             variance=params[0],
@@ -32,7 +37,7 @@ class vonKarman2KernelGPR(object):
         self.alpha = np.linalg.solve(L, GPRutils.flat(self.dC.Ytrain))
         self.alpha = np.linalg.solve(L.T, self.alpha)
         
-    def predict(self, X)
+    def predict(self, X):
 
         du, dv = GPRutils.getGrid(X, self.dC.Xtrain)
         Cuv = self.ttt.getCuv(du, dv)
@@ -42,7 +47,7 @@ class vonKarman2KernelGPR(object):
 
         Ks = np.swapaxes(Cuv, 1, 2).reshape(2*n1, 2*n2)
 
-        self.dC.fbar_s = GPRutils.unflat(np.dot(Ks.T, alpha))
+        self.dC.fbar_s = GPRutils.unflat(np.dot(Ks.T, self.alpha))
 
     def figureOfMerit(self, params):
 
@@ -79,14 +84,15 @@ class vonKarman2KernelGPR(object):
 
         return xiplus
 
-    def fitCorr(self, rmax=5*u.arcmin, nBins=50):
+    def fitCorr(self, v0=None, rmax=5*u.arcmin, nBins=50):
 
         # Calculate the 2D xiplpus that will be fitted
-        x = self.dC.Xtest[:, 0]*u.deg
-        y = self.dC.Xtest[:, 1]*u.deg
-        dx = self.dC.Ytest[:, 0]*u.mas
-        dy = self.dC.Ytest[:, 1]*u.mas
-        xiplus = calcCorrelation2D(x, y, dx, dy, rmax=rmax, nBins=nBins)[0]
+        x = self.dC.X[:, 0]*u.deg
+        y = self.dC.X[:, 1]*u.deg
+        dx = self.dC.Y[:, 0]*u.mas
+        dy = self.dC.Y[:, 1]*u.mas
+        xiplus = GPRutils.calcCorrelation2D(
+            x, y, dx, dy, rmax=rmax, nBins=nBins)[0]
         xiplus = np.where(np.isnan(xiplus), 0, xiplus)
 
         # Generate the uniform grid that the von Karman xiplus will be 
@@ -106,7 +112,7 @@ class vonKarman2KernelGPR(object):
             xiplus_model = Cuv[:, :, 0, 0] + Cuv[:, :, 1, 1]
             xiplus_model = np.where(np.isnan(xiplus_model), 0, xiplus_model)
             
-            RSS = np.sum((xiplus - xiplus_model)**2)
+            RSS = np.sum((xiplus - xiplus_model)**2) / self.dC.nData
 
             if self.printing:
                 theta = {
@@ -124,7 +130,8 @@ class vonKarman2KernelGPR(object):
             
             return RSS
 
-        v0 = np.array([500, 1, 0.1, 0.05, 0.05])
+        if v0 is None:
+            v0 = np.array([500, 1, 0.1, 0.05, 0.05])
         simplex0 = np.vstack([v0, np.vstack([v0]*5) + np.diag(v0*0.15)])
 
         options = {
@@ -144,9 +151,10 @@ class vonKarman2KernelGPR(object):
             initial_simplex=simplex0
         )
 
-    def optimize(self):
-
-        v0 = self.opt_result[0]
+    def optimize(self, v0=None):
+        
+        if v0 is None:
+            v0 = self.opt_result[0]
         simplex0 = np.vstack([v0, np.vstack([v0]*5) + np.diag(v0*0.15)])
 
         self.opt_result_GP = opt.fmin(

@@ -32,7 +32,7 @@ class dataContainer(object):
         self.expNum = expNum
         self.randomState = randomState
 
-    def loadFits(self):
+    def loadFITS(self):
         if self.FITSfile == 'hoid':
             self.datafile = '/media/pedro/Data/austinfortino/austinFull.fits'
         elif self.FITSfile == 'folio2':
@@ -40,7 +40,7 @@ class dataContainer(object):
         else:
             self.datafile = self.FITSfile
 
-        self.data = fits.open(self.datafile)
+        self.FITS = fits.open(self.datafile)
 
     def extractData(self, polyOrder=3, hasGaia=True, sample=None):
         """
@@ -59,8 +59,8 @@ class dataContainer(object):
                 "v2": 0}`.
         """
         
-        expKey = self.fits['Residuals'].data['exposure'] == self.expNum
-        exposure = self.fits['Residuals'].data[expKey]
+        expKey = self.FITS['Residuals'].data['exposure'] == self.expNum
+        exposure = self.FITS['Residuals'].data[expKey]
 
         if polyOrder is not None:
             poly = Poly2d(polyOrder)
@@ -142,14 +142,14 @@ class dataContainer(object):
         Xtrain, Xtv, Ytrain, Ytv, Etrain, Etv = train_test_split(
             self.X, self.Y, self.E,
             train_size=train_size,
-            random_state=self.random_state
+            random_state=self.randomState
             )
         
         if test_size is not None:
             Xvalid, Xtest, Yvalid, Ytest, Evalid, Etest = train_test_split(
                 Xtv, Ytv, Etv,
                 test_size=test_size,
-                random_state=self.random_state
+                random_state=self.randomState
                 )
             self.Xtrain, self.Xvalid, self.Xtest = Xtrain, Xvalid, Xtest
             self.Ytrain, self.Yvalid, self.Ytest = Ytrain, Yvalid, Ytest
@@ -195,42 +195,51 @@ class dataContainer(object):
             x, y, dx, dy, err,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
             savePath=outDir,
+            plotShow=False,
             exposure=self.expNum)
 
         plotGPR.DivCurl(
             x, y, dx, dy, err,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
             savePath=outDir,
+            plotShow=False,
             exposure=self.expNum)
 
         plotGPR.Correlation(
             x, y, dx, dy,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2,
             savePath=outDir,
+            plotShow=False,
             exposure=self.expNum)
 
         plotGPR.Correlation2D(
             x, y, dx, dy,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2,
             savePath=outDir,
+            plotShow=False,
             exposure=self.expNum)
 
-    def loadNPZ(self, file)
+        
+def loadNPZ(file):
+    
+    data = np.load(file, allow_pickle=True)
+    
+    FITSfile = data["FITSfile"]
+    expNum = data["expNum"]
+    randomState = data["randomState"].item()
+    
+    dataC = dataContainer(FITSfile, expNum, randomState)
+    dataC.X, dataC.Y, dataC.E = data["X"], data["Y"], data["E"]
 
-        data = np.load(file, allow_pickle=True)
+    dataC.splitData(
+        train_size=data["train_size"].item(),
+        test_size=data["test_size"].item()
+        )
 
-        self.FITSfile = data["FITSfile"]
-        self.expNum = data["expNum"]
-        self.randomState = data["randomState"]
-        self.X, self.Y, self.E = data["X"], data["Y"], data["E"]
-
-        self.splitData(
-            train_size=data["train_size"],
-            test_size=data["test_size"]
-            )
-
-        self.params = data["params"]
-        self.fbar_s = data["fbar_s"]
+    dataC.params = data["params"]
+    dataC.fbar_s = data["fbar_s"]
+    
+    return dataC
 
 def getGrid(X1, X2):
     u1, u2 = X1[:, 0], X2[:, 0]

@@ -1,5 +1,7 @@
 import os
 
+import GPRutils
+
 import numpy as np
 import astropy.units as u
 import matplotlib.pyplot as plt
@@ -56,7 +58,7 @@ def AstrometricResiduals(
     
     # Grab binned and weighted 2d vector diagram
     x, y, dx, dy, errors, cellSize = \
-        calcPixelGrid(
+        GPRutils.calcPixelGrid(
             x, y, dx, dy, err,
             minPoints=minPoints,
             pixelsPerBin=pixelsPerBin,
@@ -67,7 +69,7 @@ def AstrometricResiduals(
     
     if np.all([arr is not None for arr in [x2, y2, dx2, dy2, err2]]):
         x2, y2, dx2, dy2, errors2, cellSize2 = \
-            calcPixelGrid(
+            GPRutils.calcPixelGrid(
                 x2, y2, dx2, dy2, err2,
                 minPoints=minPoints,
                 pixelsPerBin=pixelsPerBin,
@@ -286,7 +288,7 @@ def DivCurl(
     
     # Calculate pixel grid
     x, y, dx, dy, errors, cellSize = \
-        calcPixelGrid(
+        GPRutils.calcPixelGrid(
             x, y, dx, dy, err,
             minPoints=minPoints,
             pixelsPerBin=pixelsPerBin,
@@ -296,13 +298,14 @@ def DivCurl(
     noise = f"Noise: {np.round(errors[2].value, 1)} {errors[2].unit}"
 
     # Calculate div and curl
-    div, curl, vardiv, varcurl = calcDivCurl(x, y, dx, dy)
+    div, curl, vardiv, varcurl = GPRutils.calcDivCurl(
+        x, y, dx, dy)
     
     if np.all([arr is not None for arr in [x2, y2, dx2, dy2, err2]]):
         
         # Calculate second pixel grid
         x2, y2, dx2, dy2, errors2, cellSize2 = \
-            calcPixelGrid(
+            GPRutils.calcPixelGrid(
                 x2, y2, dx2, dy2, err2,
                 minPoints=minPoints,
                 pixelsPerBin=pixelsPerBin,
@@ -312,7 +315,8 @@ def DivCurl(
         noise2 = f"Noise: {np.round(errors2[2].value, 1)} {errors2[2].unit}"
         
         # Calculate second div and curl
-        div2, curl2, vardiv2, varcurl2 = calcDivCurl(x2, y2, dx2, dy2)
+        div2, curl2, vardiv2, varcurl2 = GPRutils.calcDivCurl(
+            x2, y2, dx2, dy2)
         
         # Create plot
         fig, axes = plt.subplots(
@@ -485,9 +489,9 @@ def Correlation(
     ):
 
     # Calculate correlation functions
-    correlations = calcCorrelation(x, y, dx, dy,
-                                   rmin=rmin, rmax=rmax,
-                                   dlogr=dlogr)
+    correlations = GPRutils.calcCorrelation(x, y, dx, dy,
+                                            rmin=rmin, rmax=rmax,
+                                            dlogr=dlogr)
     logr, xiplus, ximinus, xicross, xiz2, xiE, xiB = correlations
     r = np.exp(logr)
 
@@ -505,9 +509,9 @@ def Correlation(
     # Check for second set of data:
     if np.all([arr is not None for arr in [x2, y2, dx2, dy2]]):
         data2 = True
-        correlations2 = calcCorrelation(x2, y2, dx2, dy2,
-                                        rmin=rmin, rmax=rmax,
-                                        dlogr=dlogr)
+        correlations2 = GPRutils.calcCorrelation(x2, y2, dx2, dy2,
+                                                 rmin=rmin, rmax=rmax,
+                                                 dlogr=dlogr)
         logr2, xiplus2, ximinus2, xicross2, xiz22, xiE2, xiB2 = correlations2
         r2 = np.exp(logr2)
         assert np.allclose(r, r2, equal_nan=True), "r and r2 are not the same"
@@ -692,14 +696,14 @@ def Correlation2D(
     ])
     ticklabels = bins[ticks]
     
-    xiplus = calcCorrelation2D(
+    xiplus = GPRutils.calcCorrelation2D(
         x, y, dx, dy, rmax=rmax, nBins=nBins)[0]
     
     if np.all([arr is not None for arr in [x2, y2, dx2, dy2]]):
-        xiplus2 = calcCorrelation2D(
+        xiplus2 = GPRutils.calcCorrelation2D(
             x2, y2, dx-dx2, dy-dy2, rmax=rmax, nBins=nBins)[0]
         
-        xiplus3 = calcCorrelation2D(
+        xiplus3 = GPRutils.calcCorrelation2D(
             x2, y2, dx2, dy2, rmax=rmax, nBins=nBins)[0]
         
         # Create plot
