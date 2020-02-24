@@ -14,7 +14,8 @@ def AstrometricResiduals(
     scale=350*u.mas,
     arrowScale=50*u.mas,
     savePath=None, saveExt="",
-    plotShow=True
+    plotShow=True,
+    exposure=None
     ):
     """
     Plots the error on each star as a function of sky position.
@@ -50,6 +51,8 @@ def AstrometricResiduals(
     # Check that scale is an astropy quantity object
     if not isinstance(scale, u.quantity.Quantity):
         raise u.TypeError(f"scale must be of type astropy.quantity.Quantity but is {type(scale)}.")
+        
+    nData = len(x)
     
     # Grab binned and weighted 2d vector diagram
     x, y, dx, dy, errors, cellSize = \
@@ -91,13 +94,13 @@ def AstrometricResiduals(
             scale=scale.to(u.deg).value,
             units='x')
         axes[0].text(0.15, 0.92, RMS_x,
-                     **{"fontname": "monospace"},
+                     fontsize=10, **{"fontname": "monospace"},
                      transform=fig.transFigure)
         axes[0].text(0.15, 0.9, RMS_y,
-                     **{"fontname": "monospace"},
+                     fontsize=10, **{"fontname": "monospace"},
                      transform=fig.transFigure)
         axes[0].text(0.15, 0.88, noise,
-                     **{"fontname": "monospace"},
+                     fontsize=10, **{"fontname": "monospace"},
                      transform=fig.transFigure)
         axes[0].set_xlabel("Sky Position (deg)", fontsize=14)
         axes[0].set_ylabel("Sky Position (deg)", fontsize=14)
@@ -127,13 +130,13 @@ def AstrometricResiduals(
             scale=scale.to(u.deg).value,
             units='x')
         axes[1].text(0.80, 0.92, RMS_x2,
-                     **{"fontname": "monospace"},
+                     fontsize=10, **{"fontname": "monospace"},
                      transform=fig.transFigure)
         axes[1].text(0.80, 0.90, RMS_y2,
-                     **{"fontname": "monospace"},
+                     fontsize=10, **{"fontname": "monospace"},
                      transform=fig.transFigure)
         axes[1].text(0.80, 0.88, noise2,
-                     **{"fontname": "monospace"},
+                     fontsize=10, **{"fontname": "monospace"},
                      transform=fig.transFigure)
         axes[1].set_xlabel("Sky Position (deg)", fontsize=14)
         axes[1].set_aspect("equal")
@@ -150,7 +153,20 @@ def AstrometricResiduals(
             labelpos='N',
             labelcolor='red')
         
-        fig.suptitle("Weighted Astrometric Residuals", fontsize=20)
+        axes[0].text(0.50, 0.90, "Weighted Astrometric Residuals",
+                     fontsize=20,
+                     transform=fig.transFigure,
+                     ha="center")
+        
+        if exposure is not None:
+            axes[0].text(0.49, 0.87, f"Exposure {exposure}",
+                         fontsize=10, **{"fontname": "monospace"},
+                         transform=fig.transFigure,
+                         ha="right")
+        axes[0].text(0.51, 0.87, f"{nData} stars",
+                     fontsize=10, **{"fontname": "monospace"},
+                     transform=fig.transFigure,
+                     ha="left")
 
     else:
         # Make the quiver plot
@@ -179,18 +195,28 @@ def AstrometricResiduals(
             labelpos='N',
             labelcolor='red')
         plt.text(0.15, 0.92, RMS_x,
-                     **{"fontname": "monospace"},
+                     fontsize=10, **{"fontname": "monospace"},
                      transform=fig.transFigure)
         plt.text(0.15, 0.90, RMS_y,
-                     **{"fontname": "monospace"},
+                     fontsize=10, **{"fontname": "monospace"},
                      transform=fig.transFigure)
         plt.text(0.15, 0.88, noise,
-                     **{"fontname": "monospace"},
+                     fontsize=10, **{"fontname": "monospace"},
                      transform=fig.transFigure)
         
         plt.title("Weighted Astrometric Residuals", fontsize=14)
         plt.xlabel("Sky Position (deg)", fontsize=14)
         plt.ylabel("Sky Position (deg)", fontsize=14)
+
+        if exposure is not None:
+            plt.text(0.75, 0.92, f"Exposure {exposure}",
+                     fontsize=10, **{"fontname": "monospace"},
+                     transform=fig.transFigure,
+                     ha="left")
+        plt.text(0.75, 0.90, f"{nData} stars",
+                 fontsize=10, **{"fontname": "monospace"},
+                 transform=fig.transFigure,
+                 ha="left")
         
         plt.gca().set_aspect('equal')
         plt.grid()
@@ -222,7 +248,8 @@ def DivCurl(
     maxErr=50*u.mas,
     scale=50,
     savePath=None, saveExt=None,
-    plotShow=True
+    plotShow=True,
+    exposure=None
     ):
     """ 
     Make 2d divergence and curl plots for the supplied vector fields.
@@ -255,6 +282,8 @@ def DivCurl(
         None
     """
 
+    nData = len(x)
+    
     # Calculate pixel grid
     x, y, dx, dy, errors, cellSize = \
         calcPixelGrid(
@@ -351,19 +380,36 @@ def DivCurl(
         axes[1, 1].axis("off")
         
         # Titles and colorbar
-        axes[0, 0].text(0.38, 0.85, title1, fontsize=20,
-                        transform=fig.transFigure)
-        axes[1, 0].text(0.38, 0.48, title2, fontsize=20,
-                        transform=fig.transFigure)
-        plt.suptitle("Divergence and Curl Fields", fontsize=20)
+        axes[0, 0].text(0.45, 0.85, title1, fontsize=20,
+                        transform=fig.transFigure,
+                        ha="center")
+        axes[1, 0].text(0.45, 0.50, title2, fontsize=20,
+                        transform=fig.transFigure,
+                        ha="center")
+        
+        axes[0, 0].text(0.45, 0.90, "Divergence and Curl Fields",
+                     fontsize=20,
+                     transform=fig.transFigure,
+                     ha="center")
+
         fig.colorbar(divplot, ax=fig.get_axes())
+        
+        if exposure is not None:
+            axes[0, 0].text(0.15, 0.92, f"Exposure {exposure}",
+                            fontsize=10, **{"fontname": "monospace"},
+                            transform=fig.transFigure,
+                            ha="left")
+        axes[0, 0].text(0.15, 0.90, f"{nData} stars",
+                        fontsize=10, **{"fontname": "monospace"},
+                        transform=fig.transFigure,
+                        ha="left")
         
     else:
         # Create plot
         fig, axes = plt.subplots(
             nrows=1, ncols=2,
             sharex=True, sharey=True,
-            figsize=(16, 8))
+            figsize=(12, 6))
 
         # Divergence plot
         divplot = axes[0].imshow(
@@ -394,7 +440,20 @@ def DivCurl(
         axes[1].axis("off")
         
         fig.colorbar(divplot, ax=fig.get_axes())
-        plt.suptitle("Divergence and Curl Fields", fontsize=20)
+        axes[0].text(0.45, 0.80, "Divergence and Curl Fields",
+                     fontsize=20,
+                     transform=fig.transFigure,
+                     ha="center")
+        
+        if exposure is not None:
+            plt.text(0.15, 0.85, f"Exposure {exposure}",
+                     fontsize=10, **{"fontname": "monospace"},
+                     transform=fig.transFigure,
+                     ha="left")
+        plt.text(0.15, 0.82, f"{nData} stars",
+                 fontsize=10, **{"fontname": "monospace"},
+                 transform=fig.transFigure,
+                 ha="left")
 
     if savePath is not None:
         saveFile = []
@@ -419,9 +478,10 @@ def Correlation(
     rmin=5*u.arcsec, rmax=1.5*u.deg, dlogr=0.05,
     ylim=(-50, 500),
     sep=1e-2*u.deg, avgLine=True,
-    printFile=None,
     savePath=None, saveExt=None,
-    plotShow=True
+    plotShow=True,
+    exposure=None,
+    showInfo=True
     ):
 
     # Calculate correlation functions
@@ -434,7 +494,7 @@ def Correlation(
     # Calculate the indices to average together for each correlation function
     ind = np.where(r <= sep.to(u.deg).value)[0]
 
-    plt.figure(figsize=(10, 10))
+    fig = plt.figure(figsize=(8, 10))
     plt.title("Angle Averaged 2-Point Correlation Function of Astrometric Residuals")
     plt.xlabel("Separation (deg)")
     plt.ylabel("Correlation (mas2)")
@@ -533,9 +593,6 @@ def Correlation(
             corrData[corr].append(avg2)
             corrData[corr].append(std2)
             corrData[corr].append(ratio)
-            plt.text(0.11, 285-15*i,
-                f"{corr:<7}: {np.round(ratio, 3)}",
-                **{"fontname": "monospace"})
 
 
     corrTypes.insert(0, " "*20)
@@ -568,8 +625,9 @@ def Correlation(
         ratiotitle = "Mean Ratio"
         ratios.insert(0, f"{ratiotitle:<20}")
         
-    corrInfo = f"{len(x)} Stars Evaluated..." + "\n"
-    corrInfo += f"For the first {len(ind)} separation bins..." + "\n"
+    corrInfo = f"Exposure {exposure}" + "\n"
+    corrInfo += f"{len(x)} Stars Evaluated" + "\n"
+    corrInfo += f"Stars with separation <= {sep}..." + "\n"
     corrInfo += "".join([f"{corr:<10}" for corr in corrTypes]) + "\n"
     if data2:
         corrInfo += "".join(means) + "\n"
@@ -581,6 +639,13 @@ def Correlation(
         corrInfo += "".join(means) + "\n"
         corrInfo += "".join(stds) + "\n"
 
+    if showInfo:
+        plt.text(0.05, 0.02, corrInfo,
+                 fontsize=10, **{"fontname": "monospace"},
+                 transform=fig.transFigure,
+                 ha="left")
+    
+
     plt.xlim((rmin.to(u.deg).value, rmax.to(u.deg).value))
     plt.ylim((ylim[0], ylim[1]))
             
@@ -588,6 +653,7 @@ def Correlation(
     if avgLine:
         plt.axvline(x=r[ind[-1]+1], c="k", ls=":")
 
+    fig.tight_layout(rect=[0, 0.10, 1, 1])
     plt.grid()
     plt.legend()
     
@@ -598,21 +664,10 @@ def Correlation(
         if np.all([arr is not None for arr in [x2, y2, dx2, dy2]]):
             saveFile.append("compare")
         saveFile.append("2ptCorr.pdf")
-        saveFile = "_".join(saveFile)
+        saveFile = "".join(saveFile)
         plt.savefig(os.path.join(savePath, saveFile))
-        
-    if printFile is not None:
-        printFile = os.path.join(savePath, printFile)
-        try:
-            os.remove(printFile)
-        except FileExistsError:
-            pass
-
-        with open(printFile, mode='a+') as file:
-                file.write(corrInfo)
 
     if plotShow:
-        print(corrInfo)
         plt.show()
 
 def Correlation2D(
@@ -622,8 +677,20 @@ def Correlation2D(
     rmax=0.3*u.deg, nBins=250,
     vmin=-100*u.mas**2, vmax=450*u.mas**2,
     savePath=None, saveExt=None,
-    plotShow=True
+    plotShow=True,
+    exposure=None
     ):
+    
+    nData = len(x)
+    if nBins % 2 == 0:
+        nBins += 1
+    bins = np.around(np.linspace(-rmax, rmax, nBins).to(u.arcmin), 1).value
+    ticks = np.array([
+        nBins//7, nBins//3,
+        nBins//2,
+        nBins-nBins//3-1, nBins-nBins//7-1
+    ])
+    ticklabels = bins[ticks]
     
     xiplus = calcCorrelation2D(
         x, y, dx, dy, rmax=rmax, nBins=nBins)[0]
@@ -639,12 +706,12 @@ def Correlation2D(
         fig, axes = plt.subplots(
             nrows=1, ncols=3,
             sharex=True, sharey=True,
-            figsize=(18, 6))
+            figsize=(16, 6))
         fig.subplots_adjust(wspace=0)
-        axes[0].set_ylabel("Separation Bins")
-        axes[0].set_xlabel("Separation Bins")
-        axes[1].set_xlabel("Separation Bins")
-        axes[2].set_xlabel("Separation Bins")
+        axes[0].set_ylabel("Separation (arcmin)")
+        axes[0].set_xlabel("Separation (arcmin)")
+        axes[1].set_xlabel("Separation (arcmin)")
+        axes[2].set_xlabel("Separation (arcmin)")
         
         im1 = axes[0].imshow(
             xiplus,
@@ -674,14 +741,19 @@ def Correlation2D(
             vmax=vmax.to(u.mas**2).value)
         axes[2].set_title(title2)
         
+        axes[0].set_yticklabels(ticklabels)
+        axes[0].set_xticklabels(ticklabels)
+        axes[0].set_yticks(ticks)
+        axes[0].set_xticks(ticks)
+        
     else:
         fig, ax = plt.subplots(
             nrows=1, ncols=1,
             sharex=True, sharey=True,
             figsize=(6, 6))
         fig.subplots_adjust(wspace=0)
-        ax.set_ylabel("Separation Bins")
-        ax.set_xlabel("Separation Bins")
+        ax.set_ylabel("Separation (arcmin)")
+        ax.set_xlabel("Separation (arcmin)")
         
         im1 = ax.imshow(
             xiplus,
@@ -691,9 +763,30 @@ def Correlation2D(
             vmin=vmin.to(u.mas**2).value,
             vmax=vmax.to(u.mas**2).value)
         ax.set_title(title1)
+        
+        ax.set_yticklabels(ticklabels)
+        ax.set_xticklabels(ticklabels)
+        ax.set_yticks(ticks)
+        ax.set_xticks(ticks)
 
     cbar = fig.colorbar(im1, ax=fig.get_axes())
     cbar.set_label("xi_+ Correlation (mas2)", rotation=270)
+    
+
+    
+    if exposure is not None:
+        plt.text(0.1, 0.86, f"Exposure {exposure}",
+                 fontsize=10, **{"fontname": "monospace"},
+                 transform=fig.transFigure,
+                 ha="left")
+    plt.text(0.1, 0.83, f"{nData} stars",
+             fontsize=10, **{"fontname": "monospace"},
+             transform=fig.transFigure,
+             ha="left")
+    plt.text(0.77, 0.83, f"Max Separation:\n{rmax}",
+             fontsize=10, **{"fontname": "monospace"},
+             transform=fig.transFigure,
+             ha="right")
 
     if savePath is not None:
         saveFile = []

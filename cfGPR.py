@@ -119,7 +119,7 @@ class CurlFreeGPR(object):
             
     def load_fits(self, datafile):
         if datafile == 'hoid':
-            self.datafile = '/media/data/austinfortino/austinFull.fits'
+            self.datafile = '/media/pedro/Data/austinfortino/austinFull.fits'
         elif datafile == 'folio2':
             self.datafile = '/data4/paper/fox/DES/austinFull.fits'
         else:
