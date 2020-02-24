@@ -179,6 +179,9 @@ class dataContainer(object):
             fbar_s=self.fbar_s
             )
 
+        self.quickPlot(outDir)
+
+    def quickPlot(self, outDir=None):
         x = self.Xtest[:, 0]*u.deg
         y = self.Xtest[:, 1]*u.deg
         dx = self.Ytest[:, 0]*u.mas
