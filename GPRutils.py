@@ -1,8 +1,10 @@
+import os
+import shutil
+
+import vK2KGPR
 import plotGPR
 
 import gbutil
-
-import os
 
 import numpy as np
 import astropy.units as u
@@ -163,13 +165,10 @@ class dataContainer(object):
         self.nTrain = self.Xtrain.shape[0]
         self.nTest = self.Xtest.shape[0]
 
-    def sigmaClipSolution(self, nSigma=4):
-        pass
-
-    def saveNPZ(self, outDir):
+    def saveNPZ(self, savePath):
 
         np.savez(
-            os.path.join(outDir, f"{self.expNum}.npz"),
+            os.path.join(savePath, f"{self.expNum}.npz"),
             FITSfile=self.FITSfile,
             expNum=self.expNum,
             randomState=self.randomState,
@@ -179,9 +178,9 @@ class dataContainer(object):
             fbar_s=self.fbar_s
             )
 
-        self.quickPlot(outDir)
+        self.quickPlot(plotShow=False, savePath=savePath)
 
-    def quickPlot(self, outDir=None):
+    def quickPlot(self, plotShow=True, savePath=None, sigmaClip=None):
         x = self.Xtest[:, 0]*u.deg
         y = self.Xtest[:, 1]*u.deg
         dx = self.Ytest[:, 0]*u.mas
@@ -193,42 +192,84 @@ class dataContainer(object):
         dx2 = self.Ytest[:, 0]*u.mas - self.fbar_s[:, 0]*u.mas
         dy2 = self.Ytest[:, 1]*u.mas - self.fbar_s[:, 1]*u.mas
         err2 = self.Etest[:, 0]*u.mas
+        
+        if sigmaClip is not None:
+            mask = stats.sigma_clip(
+                np.vstack([dx2.value, dy2.value]).T,
+                sigma=sigmaClip, axis=0).mask
+            mask = ~np.logical_or(*mask.T)
+
+            x = x[mask]
+            y = y[mask]
+            dx = dx[mask]
+            dy = dy[mask]
+            err = err[mask]
+
+            x2 = x2[mask]
+            y2 = y2[mask]
+            dx2 = dx2[mask]
+            dy2 = dy2[mask]
+            err2 = err2[mask]
 
         plotGPR.AstrometricResiduals(
             x, y, dx, dy, err,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
-            savePath=outDir,
-            plotShow=False,
+            savePath=savePath,
+            plotShow=plotShow,
             exposure=self.expNum)
 
         plotGPR.DivCurl(
             x, y, dx, dy, err,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
-            savePath=outDir,
-            plotShow=False,
+            savePath=savePath,
+            plotShow=plotShow,
             exposure=self.expNum)
 
         plotGPR.Correlation(
             x, y, dx, dy,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2,
-            savePath=outDir,
-            plotShow=False,
+            savePath=savePath,
+            plotShow=plotShow,
             exposure=self.expNum)
 
         plotGPR.Correlation2D(
             x, y, dx, dy,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2,
-            savePath=outDir,
-            plotShow=False,
+            savePath=savePath,
+            plotShow=plotShow,
             exposure=self.expNum)
 
+
+def runExposures(expNum0, expNumf, FoM, outDir):
+    
+    exps = np.arange(expNum0, expNumf+1)
+    for exp in exps:
+        
+        expFile = os.path.join(outDir, str(exp))
+        try:
+            os.mkdir(expFile)
+        except FileExistsError:
+            shutil.rmtree(expFile)
+            os.mkdir(expFile)
+        
+        dataC = dataContainer("folio2", exp)
+        dataC.loadFITS()
+        dataC.extractData()
+        dataC.sigmaClip()
+        dataC.splitData()
+        GP = vK2KGPR.vonKarman2KernelGPR(dataC, FoM=FoM, printing=True, outDir=expFile)
+        GP.fitCorr()
+        GP.optimize()
+        GP.fit(GP.opt_result_GP[0])
+        GP.predict(dataC.Xtest)
+        dataC.saveNPZ(expFile)
         
 def loadNPZ(file):
     
     data = np.load(file, allow_pickle=True)
     
     FITSfile = data["FITSfile"]
-    expNum = data["expNum"]
+    expNum = data["expNum"].item()
     randomState = data["randomState"].item()
     
     dataC = dataContainer(FITSfile, expNum, randomState)

@@ -1,3 +1,5 @@
+import os
+
 import GPRutils
 import vonkarmanFT as vk
 
@@ -9,10 +11,15 @@ from scipy.spatial.ckdtree import cKDTree
 
 class vonKarman2KernelGPR(object):
 
-    def __init__(self, dataContainer, printing=False):
+    def __init__(self, dataContainer, FoM="A", printing=False, outDir="."):
 
         self.dC = dataContainer
+        self.FoM = FoM
         self.printing = printing
+        
+        self.paramFile = os.path.join(outDir, "params.out")
+        if os.path.exists(self.paramFile):
+            os.remove(self.paramFile)
 
     def fit(self, params):
         
@@ -31,7 +38,8 @@ class vonKarman2KernelGPR(object):
         n1, n2 = Cuv.shape[0], Cuv.shape[1]
         
         K = np.swapaxes(Cuv, 1, 2).reshape(2*n1, 2*n2)
-        W = np.diag(GPRutils.flat(self.dC.Etrain)**2)
+        # W = np.diag(GPRutils.flat(self.dC.Etrain)**2)
+        W = np.diag(GPRutils.flat(self.dC.Etrain)**2) * params[5] # Additional param here
         L = np.linalg.cholesky(K + W)
         
         self.alpha = np.linalg.solve(L, GPRutils.flat(self.dC.Ytrain))
@@ -54,19 +62,34 @@ class vonKarman2KernelGPR(object):
         self.fit(params)
         self.predict(self.dC.Xtest)
 
-        # Figure of Merit Method A
-        res = self.dC.Ytest - self.dC.fbar_s
-        kdt = cKDTree(self.dC.Xtest)
-        
-        rMax = (0.2*u.deg).to(u.deg).value
-        rMin = (5*u.mas).to(u.deg).value
-        r = np.linspace(rMin, rMax, 100)
+        if self.FoM == "A":
+            # Figure of Merit Method A
+            res = self.dC.Ytest - self.dC.fbar_s
+            kdt = cKDTree(self.dC.Xtest)
 
-        xiplus = np.zeros(r.shape)
-        for i, radius in enumerate(r):
-            prs = kdt.query_pairs(r[i], output_type='ndarray')
-            xiplus[i] = np.nanmean(res[prs][:, 0, :] * res[prs][:, 1, :])
-        xiplus = np.nanmean(xiplus)
+            rMax = (0.2*u.deg).to(u.deg).value
+            rMin = (5*u.mas).to(u.deg).value
+            r = np.linspace(rMin, rMax, 100)
+
+            xiplus = np.zeros(r.shape)
+            for i, radius in enumerate(r):
+                prs = kdt.query_pairs(r[i], output_type='ndarray')
+                xiplus[i] = np.nanmean(res[prs][:, 0, :] * res[prs][:, 1, :])
+            xiplus = np.nanmean(xiplus)
+
+        if self.FoM == "B":
+            # Figure of Merit Method B
+            res = self.dC.Ytest - self.dC.fbar_s
+            kdt = cKDTree(self.dC.Xtest)
+
+            rMax = (0.02*u.deg).to(u.deg).value
+            rMin = (5*u.mas).to(u.deg).value
+
+            prs_set = kdt.query_pairs(rMax, output_type='set')
+            prs_set -= kdt.query_pairs(rMin, output_type='set')
+            prs = np.array(list(prs_set))
+
+            xiplus = np.mean(np.sum(res[prs[:, 0]] * res[prs[:, 1]], axis=1))
 
         if self.printing:
             theta = {
@@ -75,11 +98,14 @@ class vonKarman2KernelGPR(object):
                 'oS': params[1],
                 'd': params[2],
                 'wind_x': params[3],
-                'wind_y': params[4]
+                'wind_y': params[4],
+                "var_w": params[5]
             }
             params = ' '.join(
-                [f"{name:>8}: {x:<11.8f}" for name, x in theta.items()]
+                [f"{name:>6}: {x:<10.7f}" for name, x in theta.items()]
                 )
+            with open(self.paramFile, mode="a+") as file:
+                file.write(params + "\n")
             print(params)
 
         return xiplus
@@ -124,28 +150,24 @@ class vonKarman2KernelGPR(object):
                     'wind_y': params[4]
                 }
                 params = ' '.join(
-                    [f"{name:>8}: {x:<11.8f}" for name, x in theta.items()]
+                    [f"{name:>6}: {x:<10.7f}" for name, x in theta.items()]
                     )
+                with open(self.paramFile, mode="a+") as file:
+                    file.write(params + "\n")
                 print(params)
             
             return RSS
 
         if v0 is None:
-            v0 = np.array([500, 1, 0.1, 0.05, 0.05])
-        simplex0 = np.vstack([v0, np.vstack([v0]*5) + np.diag(v0*0.15)])
-
-        options = {
-            "initial_simplex": simplex0,
-            "fatol": 25,
-            "xatol": 5
-        }
+            v0 = np.array([xiplus.max(), 1, 0.1, 0.05, 0.05])
+        simplex0 = np.vstack([v0, np.vstack([v0]*v0.shape[0]) + np.diag(v0*0.15)])
 
         self.opt_result = opt.fmin(
             figureOfMerit,
             simplex0[0],
             xtol=5,
-            ftol=25,
-            maxfun=300,
+            ftol=1,
+            maxfun=150,
             full_output=True,
             retall=True,
             initial_simplex=simplex0
@@ -154,15 +176,16 @@ class vonKarman2KernelGPR(object):
     def optimize(self, v0=None):
         
         if v0 is None:
-            v0 = self.opt_result[0]
-        simplex0 = np.vstack([v0, np.vstack([v0]*5) + np.diag(v0*0.15)])
+            # v0 = self.opt_result[0]
+            v0 = np.append(self.opt_result[0], np.array([1])) # For when using extra W param
+        simplex0 = np.vstack([v0, np.vstack([v0]*v0.shape[0]) + np.diag(v0*0.15)])
 
         self.opt_result_GP = opt.fmin(
             self.figureOfMerit,
             simplex0[0],
-            xtol=0.5,
-            ftol=0.01,
-            maxfun=300,
+            xtol=2,
+            ftol=0.005,
+            maxfun=150,
             full_output=True,
             retall=True,
             initial_simplex=simplex0
