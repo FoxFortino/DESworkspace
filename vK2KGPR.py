@@ -38,8 +38,8 @@ class vonKarman2KernelGPR(object):
         n1, n2 = Cuv.shape[0], Cuv.shape[1]
         
         K = np.swapaxes(Cuv, 1, 2).reshape(2*n1, 2*n2)
-        # W = np.diag(GPRutils.flat(self.dC.Etrain)**2)
-        W = np.diag(GPRutils.flat(self.dC.Etrain)**2) * params[5] # Additional param here
+        W = np.diag(GPRutils.flat(self.dC.Etrain)**2)
+        # W = np.diag(GPRutils.flat(self.dC.Etrain)**2) * params[5] # Additional param here
         L = np.linalg.cholesky(K + W)
         
         self.alpha = np.linalg.solve(L, GPRutils.flat(self.dC.Ytrain))
@@ -99,7 +99,6 @@ class vonKarman2KernelGPR(object):
                 'd': params[2],
                 'wind_x': params[3],
                 'wind_y': params[4],
-                "var_w": params[5]
             }
             params = ' '.join(
                 [f"{name:>6}: {x:<10.7f}" for name, x in theta.items()]
@@ -160,7 +159,7 @@ class vonKarman2KernelGPR(object):
 
         if v0 is None:
             v0 = np.array([xiplus.max(), 1, 0.1, 0.05, 0.05])
-        simplex0 = np.vstack([v0, np.vstack([v0]*v0.shape[0]) + np.diag(v0*0.15)])
+            simplex0 = np.vstack([v0, np.vstack([v0]*v0.shape[0]) + np.diag(v0*0.15)])
 
         self.opt_result = opt.fmin(
             figureOfMerit,
