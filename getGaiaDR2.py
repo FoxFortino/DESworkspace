@@ -22,12 +22,12 @@ def getGaiaBox(ra, dec, width, height=None):
            "dec_parallax_corr, dec_pmra_corr, dec_pmdec_corr," + \
            "parallax_pmra_corr, parallax_pmdec_corr," + \
            "pmra_pmdec_corr," + \
-           "astrometric_excess_noise, astrometric_excess_noise_sig," + \
+           # "astrometric_excess_noise, astrometric_excess_noise_sig," + \
            "phot_g_mean_mag as Gmag, phot_g_mean_flux_over_error as g_sn," + \
            "phot_bp_mean_mag as bpmag, phot_rp_mean_mag as rpmag " + \
            "FROM gaiadr2.gaia_source " + \
-           "WHERE astrometric_params_solved=31 AND " + \
-           "CONTAINS(POINT('ICRS',ra,dec),BOX('ICRS',{:f},{:f},{:f},{:f}))=1;".format(\
+           "WHERE astrometric_params_solved=31 AND ruwe < 1.4 AND visibility_periods_used > 10" + \
+           "AND CONTAINS(POINT('ICRS',ra,dec),BOX('ICRS',{:f},{:f},{:f},{:f}))=1;".format(\
                                                             ra, dec, \
                                                             width/np.cos(dec*np.pi/180.), height)
     job = Gaia.launch_job_async(query, dump_to_file=False)
@@ -49,11 +49,12 @@ def getGaiaCat(ra, dec, width, height=None):
     # Get rid of potentially unreliable Gaia sources
     use = np.logical_and( tab['error']<3*mas,   # < 3 mas positional error
                           tab['g_sn'] > 10)     # or S/N<10 in photometry
+
     # We won't use things that have statistically significant excess Gaia
     # position noise above 2 mas.
-    noisy = np.logical_and(tab['astrometric_excess_noise']>2,
-                           tab['astrometric_excess_noise_sig']>3)
-    use = np.logical_and(use, np.logical_not(noisy))
+    # noisy = np.logical_and(tab['astrometric_excess_noise']>2,
+    #                        tab['astrometric_excess_noise_sig']>3)
+    # use = np.logical_and(use, np.logical_not(noisy))
     
     tab = tab[use] # Filter catalog with above.
     
