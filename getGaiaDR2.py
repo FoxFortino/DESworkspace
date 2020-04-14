@@ -16,20 +16,22 @@ def getGaiaBox(ra, dec, width, height=None):
     
     if height is None:
         height = width
-    query ="SELECT source_id, ra, ra_error, dec, dec_error, parallax, parallax_error, " + \
-           "pmra, pmra_error, pmdec, pmdec_error, " + \
-           "ra_dec_corr, ra_parallax_corr, ra_pmra_corr, ra_pmdec_corr," + \
-           "dec_parallax_corr, dec_pmra_corr, dec_pmdec_corr," + \
-           "parallax_pmra_corr, parallax_pmdec_corr," + \
-           "pmra_pmdec_corr," + \
-           # "astrometric_excess_noise, astrometric_excess_noise_sig," + \
-           "phot_g_mean_mag as Gmag, phot_g_mean_flux_over_error as g_sn," + \
-           "phot_bp_mean_mag as bpmag, phot_rp_mean_mag as rpmag " + \
-           "FROM gaiadr2.gaia_source " + \
-           "WHERE astrometric_params_solved=31 AND ruwe < 1.4 AND visibility_periods_used > 10" + \
-           "AND CONTAINS(POINT('ICRS',ra,dec),BOX('ICRS',{:f},{:f},{:f},{:f}))=1;".format(\
-                                                            ra, dec, \
-                                                            width/np.cos(dec*np.pi/180.), height)
+
+    query ="SELECT s.source_id, s.ra, s.ra_error, s.dec, s.dec_error, s.parallax, s.parallax_error, " + \
+               "s.pmra, s.pmra_error, s.pmdec, s.pmdec_error, " + \
+               "s.ra_dec_corr, s.ra_parallax_corr, s.ra_pmra_corr, s.ra_pmdec_corr, " + \
+               "s.dec_parallax_corr, s.dec_pmra_corr, s.dec_pmdec_corr, " + \
+               "s.parallax_pmra_corr, s.parallax_pmdec_corr, " + \
+               "s.pmra_pmdec_corr, " + \
+               "s.phot_g_mean_mag as Gmag, s.phot_g_mean_flux_over_error as g_sn, " + \
+               "s.phot_bp_mean_mag as bpmag, s.phot_rp_mean_mag as rpmag " + \
+               "FROM gaiadr2.gaia_source s " + \
+               "INNER JOIN gaiadr2.ruwe r on s.source_id=r.source_id " + \
+               "WHERE s.astrometric_params_solved=31 " + \
+               " AND r.ruwe<1.4 AND s.visibility_periods_used>8 AND " + \
+               "CONTAINS(POINT('ICRS',s.ra,s.dec),BOX('ICRS',{:f},{:f},{:f},{:f}))=1;".format(\
+                                                                ra, dec, \
+                                                                width/np.cos(dec*np.pi/180.), height)
     job = Gaia.launch_job_async(query, dump_to_file=False)
     #print("Job launched")
     #print(job)
