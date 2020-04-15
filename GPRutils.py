@@ -1,180 +1,233 @@
+# Standard modules
 import os
 import shutil
 
+# Willow Fox Fortino's modules
 import vK2KGPR
 import plotGPR
 
+# Professor Gary Bernstein's modules
+import getGaiaDR2 as gaia
 import gbutil
 
+# Science modules
 import numpy as np
 import astropy.units as u
+import astropy.constants as c
+import astropy.table as tb
+import astropy.coordinates as co
 import astropy.io.fits as fits
 import astropy.stats as stats
+from astropy.time import Time
+from scipy.spatial.ckdtree import cKDTree
 from sklearn.model_selection import train_test_split
 
 
 class dataContainer(object):
 
-    def __init__(self, FITSfile, expNum, randomState=0):
+    def __init__(self, randomState=0):
         """
         Stores data for GPR analysis.
 
-        Loads astrometry data from fits files and contains a few methods to easily format it in a way that GPR method can deal with.
-
-        Arguments:
-            FITSfile -- (str) FITS file to the grab data from
-            expNum -- (int) Exposure number from in fits file
+        Loads astrometry data from fits files and contains a few methods to
+        easily format it in a way that GPR methods can deal with.
 
         Keyword Arguments
             randomState -- (int) Seed for the various numpy and scipy random 
                 operations.
         """
 
-        self.expNum = expNum
         self.randomState = randomState
 
-    def loadFITS(self, FITSfile):
-        self.FITSfile = FITSfile
-        
-        if self.FITSfile == 'hoid':
-            self.datafile = '/media/pedro/Data/austinfortino/austinFull.fits'
-        elif self.FITSfile == 'folio2':
-            self.datafile = '/data4/paper/fox/DES/austinFull.fits'
-        else:
-            self.datafile = self.FITSfile
+    def load(
+        self,
+        expNum=None,
+        zoneDir="/data3/garyb/tno/y6/zone134",
+        tile0="DES2203-4623_final.fits",
+        earthRef="/home/fortino/y6a1.exposures.positions.fits.gz",
+        tileRef="/home/fortino/expnum_tile.fits.gz",
+        tol=0.5*u.arcsec,
+        ):
 
-        self.FITS = fits.open(self.datafile)
+        # Load in data from a reference tile (tile0). This tile is arbitrary.
+        # At the time of implementation, I do not have access to a reference
+        # file relating tiles to zones, and exposures to tiles. I only have a
+        # reference file (tileRef) that relates exposures to tiles. Therefore,
+        # this block of code opens a tile (tile0) that is actually in our
+        # (arbitrary) zone of interest for this thesis (zone 134). From this
+        # tile I can pick one of its constituent exposures. This way I have
+        # chosen an exposure that I know is in zone 134 (the zone I have
+        # access to).
+        file0 = os.path.join(zoneDir, tile0)
+        tab0 = tb.Table.read(file0)
+        if expNum is None:
+            expNum = np.unique(tab0["EXPNUM"])[10]
 
-    def extractData(self, polyOrder=3, hasGaia=True, sample=None):
-        """
-        Extract exposure information from current self.fits object.
-        
-        Keyword Arguments:
-            polyOrder -- (int) Order of the unweighted polynomial fit in (u, 
-                v) that will be femoved from (dx, dy). If `None` no fit is 
-                performed.
-            hasGaia (bool) Whether or not to only take data points which have 
-                Gaia truth positions
-            sample (dict): Dictionary denoting the coordinates (u1, u2, v1, 
-                v2) of a rectangle in (u, v). Only points in this rectangle 
-                will be kept. sample=None means the entire exposure is used. 
-                Example dictionary would be `{"u1": -0.1, "u2": 0, "v1": -0.1, 
-                "v2": 0}`.
-        """
-        
-        expKey = self.FITS['Residuals'].data['exposure'] == self.expNum
-        exposure = self.FITS['Residuals'].data[expKey]
+        #--------------------#
 
-        if polyOrder is not None:
-            poly = Poly2d(polyOrder)
-            poly.fit(exposure['u'], exposure['v'], exposure['dx'])
-            exposure['dx'] -= poly.evaluate(exposure['u'], exposure['v'])
-            poly.fit(exposure['u'], exposure['v'], exposure['dy'])
-            exposure['dy'] -= poly.evaluate(exposure['u'],exposure['v'])
-            
-        u = exposure['u']
-        v = exposure['v']
-        dx = exposure['dx']
-        dy = exposure['dy']
-        err = exposure['measErr']
-        
-        if hasGaia:
-            ind_hasGaia = np.where(exposure['hasGaia'])[0]
-            u = np.take(u, ind_hasGaia)
-            v = np.take(v, ind_hasGaia)
-            dx = np.take(dx, ind_hasGaia)
-            dy = np.take(dy, ind_hasGaia)
-            err = np.take(err, ind_hasGaia)
-        
-        if sample is not None:
-            ind_u = np.logical_and(u >= sample['u1'], u <= sample['u2'])
-            ind_v = np.logical_and(v >= sample['v1'], v <= sample['v2'])
-            ind = np.where(np.logical_and(ind_u, ind_v))[0]
-            
-            u = np.take(u, ind, axis=0)
-            v = np.take(v, ind, axis=0)
-            dx = np.take(dx, ind, axis=0)
-            dy = np.take(dy, ind, axis=0)
-            err = np.take(err, ind)
-            
-        self.X = np.vstack((u, v)).T
-        self.Y = np.vstack((dx, dy)).T
-        self.E = np.vstack((err, err)).T
+        # Use earthRef to find the center (ra, dec) of the exposure as well as
+        # the MJD of the exposure.
+        pos_tab = tb.Table.read(earthRef, hdu=1)
+        pos_tab = pos_tab[pos_tab["expnum"] == expNum]
+        ra0 = pos_tab["ra"][0]
+        dec0 = pos_tab["dec"][0]
 
-    def sigmaClip(self, nSigma=4):
-        """
-        Performs sigma clipping in (dx, dy) to nSigma standard deviations.
+        #--------------------#
+
+        # Use tileRef to find all of the tiles that our exposure is a part of.
+        tiles_tab = tb.Table.read(tileRef)
+        tiles = tiles_tab[tiles_tab["EXPNUM"] == expNum]["TILENAME"]
+
+        #--------------------#
+
+        # Create an empty astropy table with all of the necessary columns.
+        DES_tab = tab0.copy()
+        DES_tab.remove_rows(np.arange(len(DES_tab)))
+
+        # Loop through each tile, open the table, and append (with tv.vstack)
+        # the data to our empty table. Also check if the selected exposure is
+        # in the Y band because we do not want to use those.
+        for tile in tiles:
+            try:
+                tile = str(tile) + "_final.fits"
+                file = os.path.join(zoneDir, tile)
+                tab = tb.Table.read(file)
+                tab = tab[tab["EXPNUM"] == expNum]
+                band = np.unique(tab["BAND"])[0]
+                assert band != "y", "This exposure is in the y band. No."
+                DES_tab = tb.vstack([DES_tab, tab])
+            except FileNotFoundError:
+                print(f"File not found: {file}, continuing without it")
+                continue
+
+        print(f"Exposure: {expNum}")
+        print(f"Band: {np.unique(DES_tab['BAND'])[0]}")
+        print(f"Number of objects: {len(DES_tab)}")
+
+        # Initialize variables for the relevant columns.
+        DES_obs = Time(pos_tab["mjd_mid"][0], format="mjd")
+        DES_ra = np.array(DES_tab["NEW_RA"])*u.deg
+        DES_dec = np.array(DES_tab["NEW_DEC"])*u.deg
+        DES_err = np.array(DES_tab["ERRAWIN_WORLD"])*u.deg
+
+        #--------------------#
+
+        # Retrieve Gaia data and initialize variables for the relevant columns.
+        GAIA_tab = gaia.getGaiaCat(ra0, dec0, 2.5, 2.5)
+
+        GAIA_obs = Time("J2015.5", format="jyear_str", scale="tcb")
+        GAIA_ra = np.array(GAIA_tab["ra"])*u.deg - 360*u.deg
+        GAIA_dec = np.array(GAIA_tab["dec"])*u.deg
+        GAIA_pmra_cosdec = np.array(GAIA_tab["pmra"])*u.mas/u.yr
+        GAIA_pmdec = np.array(GAIA_tab["pmdec"])*u.mas/u.yr
+        GAIA_parallax = np.array(GAIA_tab["parallax"])*u.mas
+        GAIA_err = np.array(GAIA_tab["error"])*u.deg
+        GAIA_cov = np.array(GAIA_tab["cov"])
+        GAIA_cov = np.reshape(GAIA_cov, (GAIA_cov.shape[0], 5, 5)) # XXX units?
+
+        #--------------------#
+
+        # Perform an epoch transformation on the Gaia catalog to the DES
+        # catalog.
+        dt = DES_obs - GAIA_obs
+        GAIA_ra += dt * GAIA_pmra_cosdec / np.cos(GAIA_dec)
+        GAIA_dec += dt * GAIA_pmdec
+        # XXX Parallax transformation not implemented yet
+
+        #--------------------#
+
+        # Initialize astropy SkyCoord objects to take advantage of astropy's
+        # `match_coordinates_sky`.
+        X_DES = co.SkyCoord(DES_ra, DES_dec)
+        X_GAIA = co.SkyCoord(GAIA_ra, GAIA_dec)
+
+        # Match DES objects with Gaia counterparts based on how close together
+        # they are on the sky. 
+        idx, sep2d, dist3d = co.match_coordinates_sky(X_GAIA, X_DES)
+
+        # slice that can index the Gaia catalog for only the stars that have a
+        # match
+        ind_GAIA = np.where(sep2d < tol)[0]
+
+        # slice that can index the DES catalog for only the stars that have a
+        # match. Will be in the same order as ind_GAIA
+        ind_DES = idx[ind_GAIA]
+
+        print(f"There were {ind_GAIA.size} matches within {tol}.")
+
+        #--------------------#
+
+        # Perform a gnomonic projection on both the DES and Gaia catalogues.
+        X_gn_DES = gnomonicProjection(X_DES, RA0=ra0, dec0=dec0) * u.deg
+        X_gn_GAIA = gnomonicProjection(X_GAIA, RA0=ra0, dec0=dec0) * u.deg
+
+        #--------------------#
+
+        self.X = X_gn_DES
+        self.Y = X_gn_GAIA[ind_GAIA] - X_gn_DES[ind_DES]
+        self.E_GAIA = GAIA_err[ind_GAIA]
+        self.E_DES = DES_err
         
-        Parameters:
-            nSigma -- (int) Number of standard deviations to sigma clip to.
-        """
-        
+
+        assert self.X.unit == u.deg
+        assert self.Y.unit == u.deg
+        assert self.E_GAIA.unit == u.deg
+        assert self.E_DES.unit == u.deg
+
+    def sigmaClip(self, nSigma):        
         mask = stats.sigma_clip(self.Y, sigma=nSigma, axis=0).mask
         mask = ~np.logical_or(*mask.T)
-            
         self.X = self.X[mask, :]
         self.Y = self.Y[mask, :]
-        self.E = self.E[mask, :]
-        
-    def splitData(self, train_size=0.50, test_size=None):
-        """
-        Splits the data into training, validation, and testing sets.
-        
-        Example:
-            If train_size=0.60 and test_size=0.50, then the data is partitioned thus:
-            
-            60% training
-            20% validation
-            20% testing
-        
-        Parameters:
-            train_size -- (int or float) Numerical (if int) or fractional (if 
-                float) size of data set to be allocated for training (as 
-                opposed to validation/testing).
-            test_size -- (int or float) Numerical (if int) or fractional (if 
-                float) size of data set to be allocated for testing (as 
-                opposed to validation). If test_size=None, then no validation 
-                set will be generated.
+        self.E_GAIA = self.E_GAIA[mask, :]
+        self.E_DES = self.E_DES[mask, :]
 
-        """
-        self.train_size = train_size
-        self.test_size = test_size
+    def splitData(self, train_size=0.80)
 
-        self.nData = self.X.shape[0]
-        
-        Xtrain, Xtv, Ytrain, Ytv, Etrain, Etv = train_test_split(
-            self.X, self.Y, self.E,
+        X_tv = self.X[ind_DES]
+        Y_tv = self.Y[...]
+        E_tv_GAIA = self.E_GAIA[...]
+        E_tv_DES = self.E_DES[ind_DES]
+        E_tv = np.sqrt(E_tv_GAIA**2 + E_tv_DES**2)
+
+        # XXX What is the best train size to use?
+        split = train_test_split(
+            X_tv, Y_tv, E_tv
             train_size=train_size,
-            random_state=self.randomState
-            )
-        
-        if test_size is not None:
-            Xvalid, Xtest, Yvalid, Ytest, Evalid, Etest = train_test_split(
-                Xtv, Ytv, Etv,
-                test_size=test_size,
-                random_state=self.randomState
-                )
-            self.Xtrain, self.Xvalid, self.Xtest = Xtrain, Xvalid, Xtest
-            self.Ytrain, self.Yvalid, self.Ytest = Ytrain, Yvalid, Ytest
-            self.Etrain, self.Evalid, self.Etest = Etrain, Evalid, Etest
-        
-        else:
-            self.Xtrain, self.Xtest = Xtrain, Xtv
-            self.Ytrain, self.Ytest = Ytrain, Ytv
-            self.Etrain, self.Etest = Etrain, Etv
+            random_state=self.randomState)
+        self.Xtrain, self.Xvalid = split[0], split[1]
+        self.Ytrain, self.Yvalid = split[2], split[3]
+        self.Etrain, self.Evalid = split[4], split[5]
 
+        self.Xpred = np.delete(self.X, ind_DES, axis=0)
+        self.Epred = np.delete(self.E_DES, ind_DES, axis=0)
+        # Should I be using the errors that the GP provides instead of
+        # Epred_DES? These errors go into the plotting algorithms.
+
+        self.train_size = train_size
+        self.nData = self.X.shape[0]
         self.nTrain = self.Xtrain.shape[0]
-        self.nTest = self.Xtest.shape[0]
+        self.nValid = self.Xvalid.shape[0]
+        self.nPred = self.Xpred.shape[0]
 
     def saveNPZ(self, savePath):
 
         np.savez(
             os.path.join(savePath, f"{self.expNum}.npz"),
-            FITSfile=self.FITSfile,
             expNum=self.expNum,
             randomState=self.randomState,
-            train_size=self.train_size, test_size=self.test_size,
-            X=self.X, Y=self.Y, E=self.E,
+            train_size=self.train_size,
+            
+            X=self.X, Y=self.Y,
+            Xtrain=self.Xtrain, Ytrain=self.Ytrain, 
+            Xvalid=self.Xvalid, Yvalid=self.Yvalid,
+            Xpred=self.Xpred,
+
+            E_GAIA=self.E_GAIA, E_DES=self.E_DES,
+            Etrain=self.Etrain,
+            Evalid=self.Evalid,
+            Epred=self.Epred,
+
             params=self.params,
             fbar_s=self.fbar_s
             )
@@ -182,6 +235,10 @@ class dataContainer(object):
         self.quickPlot(plotShow=False, savePath=savePath)
 
     def quickPlot(self, plotShow=True, savePath=None, sigmaClip=None):
+
+
+        # XXX Need to come back here and address the fact that I have multiple
+        # errors now
         x = self.Xtest[:, 0]*u.deg
         y = self.Xtest[:, 1]*u.deg
         dx = self.Ytest[:, 0]*u.mas
@@ -241,10 +298,9 @@ class dataContainer(object):
             exposure=self.expNum)
 
 
-def runExposures(expNum0, expNumf, FoM, outDir):
+def runExposures(expNums, outDir):
     
-    exps = np.arange(expNum0, expNumf+1)
-    for exp in exps:
+    for expNum in expNums:
         
         expFile = os.path.join(outDir, str(exp))
         try:
@@ -253,33 +309,32 @@ def runExposures(expNum0, expNumf, FoM, outDir):
             shutil.rmtree(expFile)
             os.mkdir(expFile)
         
-        dataC = dataContainer("folio2", exp)
-        dataC.loadFITS()
-        dataC.extractData()
+        dataC = dataContainer(expNum)
         dataC.sigmaClip()
         dataC.splitData()
-        GP = vK2KGPR.vonKarman2KernelGPR(dataC, FoM=FoM, printing=True, outDir=expFile)
+        GP = vK2KGPR.vonKarman2KernelGPR(dataC, printing=True, outDir=expFile)
         GP.fitCorr()
         GP.optimize()
         GP.fit(GP.opt_result_GP[0])
-        GP.predict(dataC.Xtest)
+        GP.predict(dataC.Xpred)
         dataC.saveNPZ(expFile)
         
 def loadNPZ(file):
     
     data = np.load(file, allow_pickle=True)
     
-    FITSfile = data["FITSfile"]
     expNum = data["expNum"].item()
     randomState = data["randomState"].item()
     
-    dataC = dataContainer(FITSfile, expNum, randomState)
+    dataC = dataContainer(expNum, randomState)
     dataC.X, dataC.Y, dataC.E = data["X"], data["Y"], data["E"]
 
-    dataC.splitData(
-        train_size=data["train_size"].item(),
-        test_size=data["test_size"].item()
-        )
+    # Need to store Xtrain/Ytrain/Etrain and Xpred/Yvalid/Evalid and Xpred
+    # separately.
+    # dataC.splitData(
+    #     train_size=data["train_size"].item(),
+    #     test_size=data["test_size"].item()
+    #     )
 
     dataC.params = data["params"]
     dataC.fbar_s = data["fbar_s"]
@@ -293,6 +348,25 @@ def getGrid(X1, X2):
     vv1, vv2 = np.meshgrid(v1, v2)
     
     return uu1 - uu2, vv1 - vv2
+
+def gnomonicProjection(X, RA0, dec0, rot=0):
+    """
+    Perform a gnomonic projection on X.
+
+    X must be an astropy SkyCoord object.
+    """
+    pole = co.SkyCoord(RA0, dec0, unit='deg', frame='icrs')
+    frame = pole.skyoffset_frame(rotation=co.Angle(rot, unit='deg'))
+
+    s = X.transform_to(frame)
+
+    # Get 3 components on unit sphere
+    x = np.cos(s.lat.radian)*np.cos(s.lon.radian)
+    y = np.cos(s.lat.radian)*np.sin(s.lon.radian)
+    z = np.sin(s.lat.radian)
+    out_x = y/x * (180. / np.pi)
+    out_y = z/x * (180. / np.pi)
+    return np.array([out_x, out_y]).T
 
 def flat(arr):
     """
