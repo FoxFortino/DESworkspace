@@ -46,7 +46,7 @@ class dataContainer(object):
         tile0="DES2203-4623_final.fits",
         earthRef="/home/fortino/y6a1.exposures.positions.fits.gz",
         tileRef="/home/fortino/expnum_tile.fits.gz",
-        tol=0.5*u.arcsec,
+        tol=0.5*u.arcsec
         ):
 
         # Load in data from a reference tile (tile0). This tile is arbitrary.
@@ -167,14 +167,13 @@ class dataContainer(object):
         self.Y = X_gn_GAIA[self.ind_GAIA] - X_gn_DES[self.ind_DES]
         self.E_GAIA = GAIA_err[self.ind_GAIA]
         self.E_DES = DES_err
-        
 
         assert self.X.unit == u.deg
         assert self.Y.unit == u.deg
         assert self.E_GAIA.unit == u.deg
         assert self.E_DES.unit == u.deg
 
-    def splitData(self, nSigma=4, train_size=0.80):
+    def splitData(self, nSigma=4, train_size=0.80, subSample=None):
         
         self.mask = stats.sigma_clip(self.Y, sigma=nSigma, axis=0).mask
         self.mask = ~np.logical_or(*self.mask.T)
@@ -199,7 +198,34 @@ class dataContainer(object):
         # Should I be using the errors that the GP provides instead of
         # Epred_DES? These errors go into the plotting algorithms.
 
+        if subSample is not None:
+            assert subSample < 1 and subSample > 0
+
+            split = train_test_split(
+                self.Xtrain, self.Ytrain, self.Etrain,
+                train_size=subSample,
+                random_state=self.randomState)
+            self.Xtrain = split[0]
+            self.Ytrain = split[2]
+            self.Etrain = split[4]
+
+            split = train_test_split(
+                self.Xvalid, self.Yvalid, self.Evalid,
+                train_size=subSample,
+                random_state=self.randomState)
+            self.Xvalid = split[0]
+            self.Yvalid = split[2]
+            self.Evalid = split[4]
+
+            split = train_test_split(
+                self.Xpred, self.Epred,
+                train_size=subSample,
+                random_state=self.randomState)
+            self.Xpred = split[0]
+            self.Epred = split[2]
+
         self.train_size = train_size
+        self.subSample = subSample
         self.nData = self.X.shape[0]
         self.nTrain = self.Xtrain.shape[0]
         self.nValid = self.Xvalid.shape[0]
@@ -212,6 +238,7 @@ class dataContainer(object):
             expNum=self.expNum,
             randomState=self.randomState,
             train_size=self.train_size,
+            subSample=self.subSample,
             
             X=self.X, Y=self.Y,
             Xtrain=self.Xtrain, Ytrain=self.Ytrain, 
