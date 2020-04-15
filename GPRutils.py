@@ -226,10 +226,14 @@ class dataContainer(object):
 
         self.train_size = train_size
         self.subSample = subSample
-        self.nData = self.X.shape[0]
+        
         self.nTrain = self.Xtrain.shape[0]
         self.nValid = self.Xvalid.shape[0]
         self.nPred = self.Xpred.shape[0]
+        self.nData = self.nTrain + self.nValid + self.nPred
+        # note that self.X.shape[0] will be different from self.nData because
+        # of the mask that isn't applied to self.X but is applied to the other
+        # arrays.
 
     def saveNPZ(self, savePath):
 
