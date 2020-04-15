@@ -147,13 +147,13 @@ class dataContainer(object):
 
         # slice that can index the Gaia catalog for only the stars that have a
         # match
-        ind_GAIA = np.where(sep2d < tol)[0]
+        self.ind_GAIA = np.where(sep2d < tol)[0]
 
         # slice that can index the DES catalog for only the stars that have a
         # match. Will be in the same order as ind_GAIA
-        ind_DES = idx[ind_GAIA]
+        self.ind_DES = idx[self.ind_GAIA]
 
-        print(f"There were {ind_GAIA.size} matches within {tol}.")
+        print(f"There were {self.ind_GAIA.size} matches within {tol}.")
 
         #--------------------#
 
@@ -164,8 +164,8 @@ class dataContainer(object):
         #--------------------#
 
         self.X = X_gn_DES
-        self.Y = X_gn_GAIA[ind_GAIA] - X_gn_DES[ind_DES]
-        self.E_GAIA = GAIA_err[ind_GAIA]
+        self.Y = X_gn_GAIA[self.ind_GAIA] - X_gn_DES[self.ind_DES]
+        self.E_GAIA = GAIA_err[self.ind_GAIA]
         self.E_DES = DES_err
         
 
@@ -174,33 +174,28 @@ class dataContainer(object):
         assert self.E_GAIA.unit == u.deg
         assert self.E_DES.unit == u.deg
 
-    def sigmaClip(self, nSigma):        
-        mask = stats.sigma_clip(self.Y, sigma=nSigma, axis=0).mask
-        mask = ~np.logical_or(*mask.T)
-        self.X = self.X[mask, :]
-        self.Y = self.Y[mask, :]
-        self.E_GAIA = self.E_GAIA[mask, :]
-        self.E_DES = self.E_DES[mask, :]
+    def splitData(self, nSigma=4, train_size=0.80):
+        
+        self.mask = stats.sigma_clip(self.Y, sigma=nSigma, axis=0).mask
+        self.mask = ~np.logical_or(*self.mask.T)
 
-    def splitData(self, train_size=0.80)
-
-        X_tv = self.X[ind_DES]
-        Y_tv = self.Y[...]
-        E_tv_GAIA = self.E_GAIA[...]
-        E_tv_DES = self.E_DES[ind_DES]
+        X_tv = self.X[self.ind_DES][self.mask]
+        Y_tv = self.Y[self.mask]
+        E_tv_GAIA = self.E_GAIA[self.mask]
+        E_tv_DES = self.E_DES[self.ind_DES][self.mask]
         E_tv = np.sqrt(E_tv_GAIA**2 + E_tv_DES**2)
 
         # XXX What is the best train size to use?
         split = train_test_split(
-            X_tv, Y_tv, E_tv
+            X_tv, Y_tv, E_tv,
             train_size=train_size,
             random_state=self.randomState)
         self.Xtrain, self.Xvalid = split[0], split[1]
         self.Ytrain, self.Yvalid = split[2], split[3]
         self.Etrain, self.Evalid = split[4], split[5]
 
-        self.Xpred = np.delete(self.X, ind_DES, axis=0)
-        self.Epred = np.delete(self.E_DES, ind_DES, axis=0)
+        self.Xpred = np.delete(self.X, self.ind_DES, axis=0)
+        self.Epred = np.delete(self.E_DES, self.ind_DES, axis=0)
         # Should I be using the errors that the GP provides instead of
         # Epred_DES? These errors go into the plotting algorithms.
 
