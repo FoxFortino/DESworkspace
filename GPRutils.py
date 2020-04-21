@@ -22,6 +22,8 @@ from astropy.time import Time
 from scipy.spatial.ckdtree import cKDTree
 from sklearn.model_selection import train_test_split
 
+from IPython import embed
+
 
 class dataContainer(object):
 
@@ -60,23 +62,25 @@ class dataContainer(object):
         # access to).
         file0 = os.path.join(zoneDir, tile0)
         tab0 = tb.Table.read(file0)
+        self.expNum = expNum
         if expNum is None:
-            expNum = np.unique(tab0["EXPNUM"])[10]
+            self.expNum = np.unique(tab0["EXPNUM"])[10]
 
         #--------------------#
 
         # Use earthRef to find the center (ra, dec) of the exposure as well as
         # the MJD of the exposure.
         pos_tab = tb.Table.read(earthRef, hdu=1)
-        pos_tab = pos_tab[pos_tab["expnum"] == expNum]
+        pos_tab = pos_tab[pos_tab["expnum"] == self.expNum]
         ra0 = pos_tab["ra"][0]
         dec0 = pos_tab["dec"][0]
+        DES_obs = Time(pos_tab["mjd_mid"][0], format="mjd")
 
         #--------------------#
 
         # Use tileRef to find all of the tiles that our exposure is a part of.
         tiles_tab = tb.Table.read(tileRef)
-        tiles = tiles_tab[tiles_tab["EXPNUM"] == expNum]["TILENAME"]
+        tiles = tiles_tab[tiles_tab["EXPNUM"] == self.expNum]["TILENAME"]
 
         #--------------------#
 
@@ -92,7 +96,7 @@ class dataContainer(object):
                 tile = str(tile) + "_final.fits"
                 file = os.path.join(zoneDir, tile)
                 tab = tb.Table.read(file)
-                tab = tab[tab["EXPNUM"] == expNum]
+                tab = tab[tab["EXPNUM"] == self.expNum]
                 band = np.unique(tab["BAND"])[0]
                 assert band != "y", "This exposure is in the y band. No."
                 DES_tab = tb.vstack([DES_tab, tab])
@@ -100,39 +104,37 @@ class dataContainer(object):
                 print(f"File not found: {file}, continuing without it")
                 continue
 
-        print(f"Exposure: {expNum}")
+        print(f"Exposure: {self.expNum}")
         print(f"Band: {np.unique(DES_tab['BAND'])[0]}")
         print(f"Number of objects: {len(DES_tab)}")
 
         # Initialize variables for the relevant columns.
-        DES_obs = Time(pos_tab["mjd_mid"][0], format="mjd")
         DES_ra = np.array(DES_tab["NEW_RA"])*u.deg
         DES_dec = np.array(DES_tab["NEW_DEC"])*u.deg
         DES_err = np.array(DES_tab["ERRAWIN_WORLD"])*u.deg
 
         #--------------------#
 
-        # Retrieve Gaia data and initialize variables for the relevant columns.
+        # Retrieve Gaia data and initialize variables for the relevant
+        # columns.
         GAIA_tab = gaia.getGaiaCat(ra0, dec0, 2.5, 2.5)
 
         GAIA_obs = Time("J2015.5", format="jyear_str", scale="tcb")
-        GAIA_ra = np.array(GAIA_tab["ra"])*u.deg - 360*u.deg
+
+        # Adjust Gaia RA values to be between -180 and 180
+        GAIA_ra = np.array(GAIA_tab["ra"])*u.deg
+        GAIA_ra[GAIA_ra > 180*u.deg] -= 360*u.deg
+
         GAIA_dec = np.array(GAIA_tab["dec"])*u.deg
+
         GAIA_pmra_cosdec = np.array(GAIA_tab["pmra"])*u.mas/u.yr
         GAIA_pmdec = np.array(GAIA_tab["pmdec"])*u.mas/u.yr
         GAIA_parallax = np.array(GAIA_tab["parallax"])*u.mas
+
+        # Circular error approximation
         GAIA_err = np.array(GAIA_tab["error"])*u.deg
         GAIA_cov = np.array(GAIA_tab["cov"])
-        GAIA_cov = np.reshape(GAIA_cov, (GAIA_cov.shape[0], 5, 5)) # XXX units?
-
-        #--------------------#
-
-        # Perform an epoch transformation on the Gaia catalog to the DES
-        # catalog.
-        dt = DES_obs - GAIA_obs
-        GAIA_ra += dt * GAIA_pmra_cosdec / np.cos(GAIA_dec)
-        GAIA_dec += dt * GAIA_pmdec
-        # XXX Parallax transformation not implemented yet
+        GAIA_cov = np.reshape(GAIA_cov, (GAIA_cov.shape[0], 5, 5))
 
         #--------------------#
 
@@ -163,15 +165,40 @@ class dataContainer(object):
 
         #--------------------#
 
+        # Perform an epoch transformation on the Gaia catalog to the DES
+        # catalog.
+        
+        # Calculate time difference between DES and Gaia observations
+        dt = DES_obs - GAIA_obs
+        
+        # Calculate gnomonic projection of the observatory coordinates
+        X_E = pos_tab["observatory"][0][:, np.newaxis]
+        Erot = np.array([
+        [-np.sin(dec0), np.cos(dec0), 0],
+        [-np.cos(dec0)*np.sin(ra0), -np.sin(dec0)*np.sin(ra0), np.cos(dec0)],
+        [np.cos(dec0)*np.cos(ra0), np.sin(dec0)*np.cos(ra0), np.sin(dec0)]
+        ])
+        X_gn_E = np.dot(Erot, X_E)
+        
+        # Proper motion transformation
+        X_gn_GAIA[:, 0] += dt * GAIA_pmra_cosdec
+        X_gn_GAIA[:, 1] += dt * GAIA_pmdec
+        
+        # XXX NEEDS WORK Parallax transformation
+        X_gn_GAIA[:, 0] -= GAIA_parallax * X_gn_E[0]
+        X_gn_GAIA[:, 1] -= GAIA_parallax * X_gn_E[1]
+        
+        #--------------------#
+        
+        # XXX Need to find final errors ono X_gn_GAIA from GAIA_cov. Currently
+        # using GAIA_err, which are a roughly circular errors.
+        
+        #--------------------#
+
         self.X = X_gn_DES
         self.Y = X_gn_GAIA[self.ind_GAIA] - X_gn_DES[self.ind_DES]
         self.E_GAIA = GAIA_err[self.ind_GAIA]
         self.E_DES = DES_err
-
-        assert self.X.unit == u.deg
-        assert self.Y.unit == u.deg
-        assert self.E_GAIA.unit == u.deg
-        assert self.E_DES.unit == u.deg
 
     def splitData(self, nSigma=4, train_size=0.80, subSample=None):
         
@@ -183,7 +210,8 @@ class dataContainer(object):
         E_tv_GAIA = self.E_GAIA[self.mask]
         E_tv_DES = self.E_DES[self.ind_DES][self.mask]
         E_tv = np.sqrt(E_tv_GAIA**2 + E_tv_DES**2)
-
+        E_tv = np.vstack([E_tv.value, E_tv.value]).T*E_tv.unit
+        
         # XXX What is the best train size to use?
         split = train_test_split(
             X_tv, Y_tv, E_tv,
@@ -227,6 +255,21 @@ class dataContainer(object):
         self.train_size = train_size
         self.subSample = subSample
         
+        self.X = self.X.to(u.deg).value
+        self.Xtrain = self.Xtrain.to(u.deg).value
+        self.Xvalid = self.Xvalid.to(u.deg).value
+        self.Xpred = self.Xpred.to(u.deg).value
+        
+        self.Y = self.Y.to(u.mas).value
+        self.Ytrain = self.Ytrain.to(u.mas).value
+        self.Yvalid = self.Yvalid.to(u.mas).value
+        
+        self.E_GAIA = self.E_GAIA.to(u.mas).value
+        self.E_DES = self.E_DES.to(u.mas).value
+        self.Etrain = self.Etrain.to(u.mas).value
+        self.Evalid = self.Evalid.to(u.mas).value
+        self.Epred = self.Epred.to(u.mas).value
+        
         self.nTrain = self.Xtrain.shape[0]
         self.nValid = self.Xvalid.shape[0]
         self.nPred = self.Xpred.shape[0]
@@ -234,6 +277,11 @@ class dataContainer(object):
         # note that self.X.shape[0] will be different from self.nData because
         # of the mask that isn't applied to self.X but is applied to the other
         # arrays.
+        
+        print(f"{self.nData} total detections")
+        print(f"{self.nTrain} training set detections")
+        print(f"{self.nValid} validation set detections")
+        print(f"{self.nPred} prediiction set detections")
 
     def saveNPZ(self, savePath):
 
@@ -265,17 +313,17 @@ class dataContainer(object):
 
         # XXX Need to come back here and address the fact that I have multiple
         # errors now
-        x = self.Xtest[:, 0]*u.deg
-        y = self.Xtest[:, 1]*u.deg
-        dx = self.Ytest[:, 0]*u.mas
-        dy = self.Ytest[:, 1]*u.mas
-        err = self.Etest[:, 0]*u.mas
+        x = self.Xvalid[:, 0]*u.deg
+        y = self.Xvalid[:, 1]*u.deg
+        dx = self.Yvalid[:, 0]*u.mas
+        dy = self.Yvalid[:, 1]*u.mas
+        err = self.Evalid[:, 0]*u.mas
 
-        x2 = self.Xtest[:, 0]*u.deg
-        y2 = self.Xtest[:, 1]*u.deg
-        dx2 = self.Ytest[:, 0]*u.mas - self.fbar_s[:, 0]*u.mas
-        dy2 = self.Ytest[:, 1]*u.mas - self.fbar_s[:, 1]*u.mas
-        err2 = self.Etest[:, 0]*u.mas
+        x2 = self.Xvalid[:, 0]*u.deg
+        y2 = self.Xvalid[:, 1]*u.deg
+        dx2 = self.Yvalid[:, 0]*u.mas - self.fbar_s[:, 0]*u.mas
+        dy2 = self.Yvalid[:, 1]*u.mas - self.fbar_s[:, 1]*u.mas
+        err2 = self.Evalid[:, 0]*u.mas
         
         if sigmaClip is not None:
             mask = stats.sigma_clip(
@@ -486,7 +534,7 @@ def calcPixelGrid(
     if not isinstance(maxErr, u.quantity.Quantity):
         raise TypeError("maxErr must be of type astropy.units.quantity.Quantity.")
     if maxErr.unit != err.unit:
-        raise u.UnitsError(f"maxErr has units of {err.unit} but should have the same units as dx, dy and err ({err.unit}).")
+        raise u.UnitsError(f"maxErr has units of {maxErr.unit} but should have the same units as dx, dy and err ({err.unit}).")
         
     x = x.to(u.deg)
     y = y.to(u.deg)

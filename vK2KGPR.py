@@ -23,10 +23,10 @@ class vonKarman2KernelGPR(object):
     def fitCorr(self, v0=None, rmax=5*u.arcmin, nBins=50):
 
         # Calculate the 2D xiplpus that will be fitted
-        x = self.dC.X[:, 0]
-        y = self.dC.X[:, 1]
-        dx = self.dC.Y[:, 0]
-        dy = self.dC.Y[:, 1]
+        x = self.dC.Xtrain[:, 0]*u.deg
+        y = self.dC.Xtrain[:, 1]*u.deg
+        dx = self.dC.Ytrain[:, 0]*u.mas
+        dy = self.dC.Ytrain[:, 1]*u.mas
         xiplus = GPRutils.calcCorrelation2D(
             x, y, dx, dy, rmax=rmax, nBins=nBins)[0]
         xiplus = np.where(np.isnan(xiplus), 0, xiplus)
@@ -70,7 +70,9 @@ class vonKarman2KernelGPR(object):
 
         if v0 is None:
             v0 = np.array([xiplus.max(), 1, 0.1, 0.05, 0.05])
-            simplex0 = np.vstack([v0, np.vstack([v0]*v0.shape[0]) + np.diag(v0*0.15)])
+            simplex0 = np.vstack(
+                [v0, np.vstack([v0]*v0.shape[0]) + np.diag(v0*0.15)]
+            )
 
         self.opt_result = opt.fmin(
             figureOfMerit_fitCorr,
@@ -93,7 +95,7 @@ class vonKarman2KernelGPR(object):
             diameter=params[2],
             wind=(params[3], params[4]))
         
-        du, dv = GPRutils.getGrid(self.dC.Xtrain, self.dC.Xtrain)
+        du, dv = GPRutils.getGrid(self.dC.Xtrain, self.dC.Xtrain) 
         Cuv = self.ttt.getCuv(du, dv)
         Cuv[:, :, 0, 1] *= 0
         Cuv[:, :, 1, 0] *= 0
@@ -156,15 +158,16 @@ class vonKarman2KernelGPR(object):
     def optimize(self, v0=None):
         
         if v0 is None:
-            # v0 = self.opt_result[0]
-            v0 = np.append(self.opt_result[0], np.array([1])) # For when using extra W param
-        simplex0 = np.vstack([v0, np.vstack([v0]*v0.shape[0]) + np.diag(v0*0.15)])
+            v0 = self.opt_result[0]
+        simplex0 = np.vstack(
+            [v0, np.vstack([v0]*v0.shape[0]) + np.diag(v0*0.15)]
+        )
 
         self.opt_result_GP = opt.fmin(
             self.figureOfMerit,
             simplex0[0],
             xtol=2,
-            ftol=0.005,
+            ftol=0.002,
             maxfun=150,
             full_output=True,
             retall=True,
