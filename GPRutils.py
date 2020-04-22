@@ -63,7 +63,7 @@ class dataContainer(object):
         file0 = os.path.join(zoneDir, tile0)
         tab0 = tb.Table.read(file0)
         self.expNum = expNum
-        if expNum is None:
+        if self.expNum is None:
             self.expNum = np.unique(tab0["EXPNUM"])[10]
 
         #--------------------#
@@ -101,8 +101,10 @@ class dataContainer(object):
                 assert band != "y", "This exposure is in the y band. No."
                 DES_tab = tb.vstack([DES_tab, tab])
             except FileNotFoundError:
-                print(f"File not found: {file}, continuing without it")
-                continue
+                # print(f"File not found: {file}, continuing without it")
+                # continue
+                print(f"File not found: {file}, quitting...")
+                quit()
 
         print(f"Exposure: {self.expNum}")
         print(f"Band: {np.unique(DES_tab['BAND'])[0]}")
@@ -133,6 +135,8 @@ class dataContainer(object):
 
         # Circular error approximation
         GAIA_err = np.array(GAIA_tab["error"])*u.deg
+
+        # Full covariance matrix
         GAIA_cov = np.array(GAIA_tab["cov"])
         GAIA_cov = np.reshape(GAIA_cov, (GAIA_cov.shape[0], 5, 5))
 
@@ -184,14 +188,15 @@ class dataContainer(object):
         X_gn_GAIA[:, 0] += dt * GAIA_pmra_cosdec
         X_gn_GAIA[:, 1] += dt * GAIA_pmdec
         
-        # XXX NEEDS WORK Parallax transformation
+        # Parallax transformation
+        # X_gn_E[2] SHOULD be the line of sight component...
         X_gn_GAIA[:, 0] -= GAIA_parallax * X_gn_E[0]
         X_gn_GAIA[:, 1] -= GAIA_parallax * X_gn_E[1]
         
         #--------------------#
         
-        # XXX Need to find final errors ono X_gn_GAIA from GAIA_cov. Currently
-        # using GAIA_err, which are a roughly circular errors.
+        # XXX Need to find final errors on X_gn_GAIA from GAIA_cov. Currently
+        # using GAIA_err, which are roughly circular errors.
         
         #--------------------#
 
@@ -202,17 +207,43 @@ class dataContainer(object):
 
     def splitData(self, nSigma=4, train_size=0.80, subSample=None):
         
-        self.mask = stats.sigma_clip(self.Y, sigma=nSigma, axis=0).mask
-        self.mask = ~np.logical_or(*self.mask.T)
 
-        X_tv = self.X[self.ind_DES][self.mask]
-        Y_tv = self.Y[self.mask]
-        E_tv_GAIA = self.E_GAIA[self.mask]
-        E_tv_DES = self.E_DES[self.ind_DES][self.mask]
+        # When saving data to npz, the training, validation, and predication
+        # sets will not be saved. Instead, the full sets are saved and the
+        # numpy random state is saved so that the exact same training
+        # validation/prediction splt (also the subSample split, if present)
+        # can be made again. In effect, when the npz is loaded back in, the
+        # following arrays should be set as attributes in the dataContainer
+        # object and the dataContianer.splitData should be called again.
+        
+        # The saved arrays, and their shapes, are:
+        # self.X (nData, 2)
+        # self.Y (nTrain + nValid, 2)
+        # self.E_DES (nData, 2)
+        # self.E_GAIA (nTrain + nValid, 2)
+
+        # These arrays are not used directly. They are only used to create the
+        # training, validation, and prediction sets.
+
+        # Signa clip on the residuals, hopefully removing a few outliers.
+        mask = stats.sigma_clip(self.Y, sigma=nSigma, axis=0).mask
+        mask = ~np.logical_or(*mask.T)
+
+        # Make intermediate `tv` arrays (training/validation). These arrays
+        # will be split into the training and validation sets and are not used
+        # directly.
+        X_tv = self.X[self.ind_DES][mask]
+        Y_tv = self.Y[mask]
+        E_tv_GAIA = self.E_GAIA[mask]
+        E_tv_DES = self.E_DES[self.ind_DES][mask]
+
+        # The training and validation sets use the combined errors from DES
+        # and Gaia, so I will make the intermediate `tv` array for that here.
         E_tv = np.sqrt(E_tv_GAIA**2 + E_tv_DES**2)
         E_tv = np.vstack([E_tv.value, E_tv.value]).T*E_tv.unit
         
-        # XXX What is the best train size to use?
+        # Perform the split, according to the random state, to make the
+        # training and validation sets.
         split = train_test_split(
             X_tv, Y_tv, E_tv,
             train_size=train_size,
@@ -221,11 +252,16 @@ class dataContainer(object):
         self.Ytrain, self.Yvalid = split[2], split[3]
         self.Etrain, self.Evalid = split[4], split[5]
 
+        # From the datasets (length nData) for X (astrometric position) and
+        # E_DES (measurement error), remove the elements that have a Gaia
+        # counterpart (these are already accounted for in the training
+        # validation sets).
         self.Xpred = np.delete(self.X, self.ind_DES, axis=0)
         self.Epred = np.delete(self.E_DES, self.ind_DES, axis=0)
-        # Should I be using the errors that the GP provides instead of
-        # Epred_DES? These errors go into the plotting algorithms.
 
+        # The subSample keyword argument is a float between 0 and 1. This is
+        # the faction of the entire DES dataset that I want to look at. This
+        # is useful when you want to run things a lot faster.
         if subSample is not None:
             assert subSample < 1 and subSample > 0
 
@@ -252,9 +288,16 @@ class dataContainer(object):
             self.Xpred = split[0]
             self.Epred = split[2]
 
+        # Declare these values as attributes because these are important to
+        # have when reconstructing the training/validation sets when loading
+        # in this data from npz.
         self.train_size = train_size
         self.subSample = subSample
-        
+        self.nSigma = nSigma
+
+        # The following blocks of code get each of the relevant arrays, put
+        # them in the right units, and then removes the units from the array
+        # so they are easier to work with.
         self.X = self.X.to(u.deg).value
         self.Xtrain = self.Xtrain.to(u.deg).value
         self.Xvalid = self.Xvalid.to(u.deg).value
@@ -291,39 +334,21 @@ class dataContainer(object):
             randomState=self.randomState,
             train_size=self.train_size,
             subSample=self.subSample,
-            
             X=self.X, Y=self.Y,
-            Xtrain=self.Xtrain, Ytrain=self.Ytrain, 
-            Xvalid=self.Xvalid, Yvalid=self.Yvalid,
-            Xpred=self.Xpred,
-
             E_GAIA=self.E_GAIA, E_DES=self.E_DES,
-            Etrain=self.Etrain,
-            Evalid=self.Evalid,
-            Epred=self.Epred,
-
             params=self.params,
             fbar_s=self.fbar_s
             )
 
-        self.quickPlot(plotShow=False, savePath=savePath)
-
     def quickPlot(self, plotShow=True, savePath=None, sigmaClip=None):
 
-
-        # XXX Need to come back here and address the fact that I have multiple
-        # errors now
-        x = self.Xvalid[:, 0]*u.deg
-        y = self.Xvalid[:, 1]*u.deg
-        dx = self.Yvalid[:, 0]*u.mas
-        dy = self.Yvalid[:, 1]*u.mas
+        x, y = self.Xvalid.T*u.deg
+        dx, dy = self.Yvalid.T*u.mas
         err = self.Evalid[:, 0]*u.mas
 
-        x2 = self.Xvalid[:, 0]*u.deg
-        y2 = self.Xvalid[:, 1]*u.deg
-        dx2 = self.Yvalid[:, 0]*u.mas - self.fbar_s[:, 0]*u.mas
-        dy2 = self.Yvalid[:, 1]*u.mas - self.fbar_s[:, 1]*u.mas
-        err2 = self.Evalid[:, 0]*u.mas
+        x2, y2 = x, y
+        dx2, dy2 = self.Yvalid.T*u.mas - self.fbar_s.T*u.mas
+        err2 = err
         
         if sigmaClip is not None:
             mask = stats.sigma_clip(
@@ -346,52 +371,39 @@ class dataContainer(object):
         plotGPR.AstrometricResiduals(
             x, y, dx, dy, err,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
-            savePath=savePath,
-            plotShow=plotShow,
-            exposure=self.expNum)
+            savePath=outDir,
+            plotShow=False,
+            exposure=expNum,
+            scale=200*u.mas,
+            arrowScale=10*u.mas)
 
         plotGPR.DivCurl(
             x, y, dx, dy, err,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
-            savePath=savePath,
-            plotShow=plotShow,
-            exposure=self.expNum)
+            savePath=outDir,
+            plotShow=False,
+            exposure=expNum,
+            pixelsPerBin=1500)
 
         plotGPR.Correlation(
             x, y, dx, dy,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2,
-            savePath=savePath,
-            plotShow=plotShow,
-            exposure=self.expNum)
+            savePath=outDir,
+            plotShow=False,
+            exposure=expNum,
+            ylim=(-20, 75))
 
         plotGPR.Correlation2D(
             x, y, dx, dy,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2,
-            savePath=savePath,
-            plotShow=plotShow,
-            exposure=self.expNum)
+            savePath=outDir,
+            plotShow=False,
+            exposure=self.expNum,
+            nBins=50,
+            vmin=0*u.mas**2,
+            vmax=40*u.mas**2,
+            rmax=0.50*u.deg)
 
-
-def runExposures(expNums, outDir):
-    
-    for expNum in expNums:
-        
-        expFile = os.path.join(outDir, str(exp))
-        try:
-            os.mkdir(expFile)
-        except FileExistsError:
-            shutil.rmtree(expFile)
-            os.mkdir(expFile)
-        
-        dataC = dataContainer(expNum)
-        dataC.sigmaClip()
-        dataC.splitData()
-        GP = vK2KGPR.vonKarman2KernelGPR(dataC, printing=True, outDir=expFile)
-        GP.fitCorr()
-        GP.optimize()
-        GP.fit(GP.opt_result_GP[0])
-        GP.predict(dataC.Xpred)
-        dataC.saveNPZ(expFile)
         
 def loadNPZ(file):
     
@@ -399,16 +411,15 @@ def loadNPZ(file):
     
     expNum = data["expNum"].item()
     randomState = data["randomState"].item()
-    
-    dataC = dataContainer(expNum, randomState)
-    dataC.X, dataC.Y, dataC.E = data["X"], data["Y"], data["E"]
+    nSigma = data["nSigma"].item()
+    train_size = data["train_size"].item()
+    subSample = data["subSample"].item()
 
-    # Need to store Xtrain/Ytrain/Etrain and Xpred/Yvalid/Evalid and Xpred
-    # separately.
-    # dataC.splitData(
-    #     train_size=data["train_size"].item(),
-    #     test_size=data["test_size"].item()
-    #     )
+    dataC = dataContainer(expNum, randomState)
+    dataC.X, dataC.Y = data["X"], data["Y"]
+    dataC.E_GAIA, dataC.E_DES = data["E_GAIA"], data["E_DES"]
+
+    dataC.splitData(nSigma=nSigma, train_size=train_size, subSample=subSample)
 
     dataC.params = data["params"]
     dataC.fbar_s = data["fbar_s"]
