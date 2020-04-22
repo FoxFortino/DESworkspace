@@ -372,7 +372,7 @@ class dataContainer(object):
             x, y, dx, dy, err,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
             savePath=outDir,
-            plotShow=False,
+            plotShow=plotShow,
             exposure=expNum,
             scale=200*u.mas,
             arrowScale=10*u.mas)
@@ -381,7 +381,7 @@ class dataContainer(object):
             x, y, dx, dy, err,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
             savePath=outDir,
-            plotShow=False,
+            plotShow=plotShow,
             exposure=expNum,
             pixelsPerBin=1500)
 
@@ -389,7 +389,7 @@ class dataContainer(object):
             x, y, dx, dy,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2,
             savePath=outDir,
-            plotShow=False,
+            plotShow=plotShow,
             exposure=expNum,
             ylim=(-20, 75))
 
@@ -397,7 +397,7 @@ class dataContainer(object):
             x, y, dx, dy,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2,
             savePath=outDir,
-            plotShow=False,
+            plotShow=plotShow,
             exposure=self.expNum,
             nBins=50,
             vmin=0*u.mas**2,
