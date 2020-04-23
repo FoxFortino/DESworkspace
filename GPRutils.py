@@ -72,8 +72,8 @@ class dataContainer(object):
         # the MJD of the exposure.
         pos_tab = tb.Table.read(earthRef, hdu=1)
         pos_tab = pos_tab[pos_tab["expnum"] == self.expNum]
-        ra0 = pos_tab["ra"][0]
-        dec0 = pos_tab["dec"][0]
+        ra0 = pos_tab["ra"][0]*u.deg
+        dec0 = pos_tab["dec"][0]*u.deg
         DES_obs = Time(pos_tab["mjd_mid"][0], format="mjd")
 
         #--------------------#
@@ -119,7 +119,7 @@ class dataContainer(object):
 
         # Retrieve Gaia data and initialize variables for the relevant
         # columns.
-        GAIA_tab = gaia.getGaiaCat(ra0, dec0, 2.5, 2.5)
+        GAIA_tab = gaia.getGaiaCat(ra0.value, dec0.value, 2.5, 2.5)
 
         GAIA_obs = Time("J2015.5", format="jyear_str", scale="tcb")
 
@@ -163,130 +163,174 @@ class dataContainer(object):
 
         #--------------------#
 
-        # Perform a gnomonic projection on both the DES and Gaia catalogues.
-        X_gn_DES = gnomonicProjection(X_DES, RA0=ra0, dec0=dec0) * u.deg
-        X_gn_GAIA = gnomonicProjection(X_GAIA, RA0=ra0, dec0=dec0) * u.deg
-
-        #--------------------#
-
-        # Perform an epoch transformation on the Gaia catalog to the DES
-        # catalog.
-        
-        # Calculate time difference between DES and Gaia observations
-        dt = DES_obs - GAIA_obs
-        
-        # Calculate gnomonic projection of the observatory coordinates
-        X_E = pos_tab["observatory"][0][:, np.newaxis]
-        Erot = np.array([
-        [-np.sin(dec0), np.cos(dec0), 0],
-        [-np.cos(dec0)*np.sin(ra0), -np.sin(dec0)*np.sin(ra0), np.cos(dec0)],
-        [np.cos(dec0)*np.cos(ra0), np.sin(dec0)*np.cos(ra0), np.sin(dec0)]
+        # Transformation matrix from ICRS to gnomonic projection about 
+        # (ra0, dec0).
+        M = np.array([
+            [-np.sin(ra0),np.cos(ra0),0],
+            [-np.cos(ra0)*np.sin(dec0),-np.sin(ra0)*np.sin(dec0),np.cos(dec0)],
+            [np.cos(ra0)*np.cos(dec0),np.sin(ra0)*np.cos(dec0),np.sin(dec0)]
         ])
-        X_gn_E = np.dot(Erot, X_E)
-        
-        # Proper motion transformation
-        X_gn_GAIA[:, 0] += dt * GAIA_pmra_cosdec
-        X_gn_GAIA[:, 1] += dt * GAIA_pmdec
-        
-        # Parallax transformation
-        # X_gn_E[2] SHOULD be the line of sight component...
-        X_gn_GAIA[:, 0] -= GAIA_parallax * X_gn_E[0]
-        X_gn_GAIA[:, 1] -= GAIA_parallax * X_gn_E[1]
-        
-        #--------------------#
-        
-        # XXX Need to find final errors on X_gn_GAIA from GAIA_cov. Currently
-        # using GAIA_err, which are roughly circular errors.
-        
+
+        # Compute ICRS coordinates of DES catalog
+        X_ICRS_DES = np.array([
+            np.cos(DES_dec) * np.cos(DES_ra),
+            np.cos(DES_dec) * np.sin(DES_ra),
+            np.sin(DES_dec)
+        ])
+
+        # Compute ICRS coordinates of Gaia catalog.
+        X_ICRS_GAIA = np.array([
+            np.cos(GAIA_dec) * np.cos(GAIA_ra),
+            np.cos(GAIA_dec) * np.sin(GAIA_ra),
+            np.sin(GAIA_dec)
+        ])
+
+        # Perform gnomonic projection on DES catalog.
+        xproj, yproj, zproj = np.dot(M, X_ICRS_DES)
+        X_gn_DES = ((xproj/zproj, yproj/zproj)*u.rad).to(u.deg).T
+
+        # Perform gnomonic projection on Gaia catalog.
+        xproj, yproj, zproj = np.dot(M, X_ICRS_GAIA)
+        X_gn_GAIA = ((xproj/zproj, yproj/zproj)*u.rad).to(u.deg).T
+
         #--------------------#
 
+        # Calculate gnomonic projection of the observatory coordinates
+        X_E = pos_tab["observatory"][0]
+        X_gn_E = np.dot(M, X_E)
+
+        # Calculate time difference between DES and Gaia observations.
+        dt = DES_obs - GAIA_obs
+        dt = dt.sec
+        dt = (dt*u.s).to(u.yr).value
+
+        # Calculate coefficient matrix in appropriate units.
+        A = np.array([
+            [1, 0, dt, 0, X_gn_E[0]],
+            [0, 1, 0, dt, X_gn_E[1]]
+        ])
+
+        # Calculate the variable array in appropriate units.
+        X = np.vstack([
+            X_gn_GAIA[:, 0].value,
+            X_gn_GAIA[:, 1].value,
+            GAIA_pmra_cosdec.to(u.deg/u.yr).value,
+            GAIA_pmdec.to(u.deg/u.yr).value,
+            GAIA_parallax.to(u.deg).value
+        ])
+
+        # Perform epoch transformation
+        X_gn_transf_GAIA = np.dot(A, X).T*u.deg
+        
+        #--------------------#
+        
+        # Find covariance matrix for X_gn_transf_GAIA.
+        cov = np.dot(A, np.dot(GAIA_cov, A.T))
+
+        # Swap axes to make the shape of the array more natural to humans.
+        cov = np.swapaxes(cov, 1, 0)
+
+        #--------------------#
+
+        # Declare attribute for the full X array (DES star positions). This array will be split into the training, validation, and prediction sets.
         self.X = X_gn_DES
-        self.Y = X_gn_GAIA[self.ind_GAIA] - X_gn_DES[self.ind_DES]
-        self.E_GAIA = GAIA_err[self.ind_GAIA]
+
+        # This line performs the subtraction between Gaia stars (indexed by
+        # ind_GAIA which takes only the Gaia stars that have DES counterparts)
+        # and DES stars (indexed by ind_DES which takes only the DES stars
+        # that have DES counterparts). This creates the astrometric residuals
+        # between the "true" star positions (Gaia) and the "observed" star
+        # positions (DES).
+        self.Y = X_gn_transf_GAIA[self.ind_GAIA] - X_gn_DES[self.ind_DES]
+
+        # This is an array of (2, 2) covariance matrices. This line selects
+        # only the covariance matrices for Gaia stars that have a DES
+        # counterpart.
+        self.E_GAIA = cov[ind_GAIA, :, :]
+
+        # Declare attribute for circular measurement error for DES stars.
+        # There is not a (2, 2) covariance matrix for each detection because
+        # DES only provides circular measurement errors (to my knowledge as a
+        # lowly undergraduate).
         self.E_DES = DES_err
 
-    def splitData(self, nSigma=4, train_size=0.80, subSample=None):
+    def splitData(self, nSigma=4, train_size=0.80, subSample=1.0):
+        """
+        Split data and error arrows according to train_size and subSample.
+
+        When saving data to npz, the training, validation, and predication
+        sets will not be saved. Instead, the full sets are saved and the
+        numpy random state is saved so that the exact same training
+        validation/prediction splt (also the subSample split, if present)
+        can be made again. In effect, when the npz is loaded back in, the
+        following arrays should be set as attributes in the dataContainer
+        object and the dataContianer.splitData should be called again.
         
+        The saved arrays, and their shapes, are:
+        self.X (nData, 2)
+        self.Y (nTrain + nValid, 2)
+        self.E_DES (nData, 2)
+        self.E_GAIA (nTrain + nValid, 2)
 
-        # When saving data to npz, the training, validation, and predication
-        # sets will not be saved. Instead, the full sets are saved and the
-        # numpy random state is saved so that the exact same training
-        # validation/prediction splt (also the subSample split, if present)
-        # can be made again. In effect, when the npz is loaded back in, the
-        # following arrays should be set as attributes in the dataContainer
-        # object and the dataContianer.splitData should be called again.
-        
-        # The saved arrays, and their shapes, are:
-        # self.X (nData, 2)
-        # self.Y (nTrain + nValid, 2)
-        # self.E_DES (nData, 2)
-        # self.E_GAIA (nTrain + nValid, 2)
-
-        # These arrays are not used directly. They are only used to create the
-        # training, validation, and prediction sets.
-
-        # Signa clip on the residuals, hopefully removing a few outliers.
+        These arrays are not used directly. They are only used to create the
+        training, validation, and prediction sets.        
+        """
+        # Sigma clip on the residuals, hopefully removing a few outliers.
         mask = stats.sigma_clip(self.Y, sigma=nSigma, axis=0).mask
         mask = ~np.logical_or(*mask.T)
 
         # Make intermediate `tv` arrays (training/validation). These arrays
         # will be split into the training and validation sets and are not used
-        # directly.
+        # directly. Also apply the sigma clipping mask.
+        # The sigma clipping mask is not applied to the attributes
+        # dataContainer.X, dataContainer.Y, etc., because I want to save the
+        # full array when I save all of this data to an npz file that way I
+        # can just run this method again and recreate the training,
+        # validation, and prediction sets (and sigma clipping won't happen
+        # twice). Having to run this method again when loading in npz data is
+        # not a bad thing because it means I don't have to save those arrays
+        # in the npz file.
         X_tv = self.X[self.ind_DES][mask]
         Y_tv = self.Y[mask]
         E_tv_GAIA = self.E_GAIA[mask]
         E_tv_DES = self.E_DES[self.ind_DES][mask]
 
-        # The training and validation sets use the combined errors from DES
-        # and Gaia, so I will make the intermediate `tv` array for that here.
-        E_tv = np.sqrt(E_tv_GAIA**2 + E_tv_DES**2)
-        E_tv = np.vstack([E_tv.value, E_tv.value]).T*E_tv.unit
-        
-        # Perform the split, according to the random state, to make the
-        # training and validation sets.
-        split = train_test_split(
-            X_tv, Y_tv, E_tv,
-            train_size=train_size,
-            random_state=self.randomState)
-        self.Xtrain, self.Xvalid = split[0], split[1]
-        self.Ytrain, self.Yvalid = split[2], split[3]
-        self.Etrain, self.Evalid = split[4], split[5]
+        # Generate an array of numbers from 0 to nTV-1.
+        nTV = X_tv.shape[0]
+        tv_mask = np.arange(nTV)
+
+        # Shuffle these numbers. Now I can take the first X% of these and have a random slice of the data. If I were to simply  take the first X% of the data arrays I would not have a random subset because the arrays are ordered.
+        rng.shuffle(tv_mask)
+
+        # Figure out the number of data points that should be included based on subSample
+        nSubSample = int(np.ceil(nTV*subSample))
+
+        # Take only the first nSubSample data points from the mask. Now I can take the first X% of these and have a random slice of (subSample)% of the full dataset.
+        tv_mask = tv_mask[:nSubSample]
+
+        # Redefine nTV based on subSample because nTrain and nValid are calculated from it.
+        nTV = int(np.ceil(nTV*subSample))
+        nTrain = int(np.floor(nTV*train_size))
+        nValid = nTV - nTrain
+
+        # Get the training set and validation set slices. When used to index the data arrays, these will retrieve random subsets of the data.
+        train_mask = tv_mask[:nTrain]
+        valid_mask = tv_mask[nTrain:]
+
+        # Get the training and validation sets from the slices.
+        Xtrain, Xvalid = X_tv[train_mask, :], X_tv[valid_mask, :]
+        Ytrain, Yvalid = Y_tv[train_mask, :], Y_tv[valid_mask, :]
+        Etrain_GAIA = E_tv_GAIA[train_mask, ...]
+        Evalid_GAIA = E_tv_GAIA[valid_mask, ...]
+        Etrain_DES = E_tv_DES[train_mask]
+        Evalid_DES = E_tv_DES[valid_mask]
 
         # From the datasets (length nData) for X (astrometric position) and
         # E_DES (measurement error), remove the elements that have a Gaia
         # counterpart (these are already accounted for in the training
         # validation sets).
-        self.Xpred = np.delete(self.X, self.ind_DES, axis=0)
-        self.Epred = np.delete(self.E_DES, self.ind_DES, axis=0)
-
-        # The subSample keyword argument is a float between 0 and 1. This is
-        # the faction of the entire DES dataset that I want to look at. This
-        # is useful when you want to run things a lot faster.
-        if subSample is not None:
-            assert subSample < 1 and subSample > 0
-
-            split = train_test_split(
-                self.Xtrain, self.Ytrain, self.Etrain,
-                train_size=subSample,
-                random_state=self.randomState)
-            self.Xtrain = split[0]
-            self.Ytrain = split[2]
-            self.Etrain = split[4]
-
-            split = train_test_split(
-                self.Xvalid, self.Yvalid, self.Evalid,
-                train_size=subSample,
-                random_state=self.randomState)
-            self.Xvalid = split[0]
-            self.Yvalid = split[2]
-            self.Evalid = split[4]
-
-            split = train_test_split(
-                self.Xpred, self.Epred,
-                train_size=subSample,
-                random_state=self.randomState)
-            self.Xpred = split[0]
-            self.Epred = split[2]
+        Xpred = np.delete(X, self.ind_DES, axis=0)
+        Epred = np.delete(E_DES, self.ind_DES, axis=0)
 
         # Declare these values as attributes because these are important to
         # have when reconstructing the training/validation sets when loading
@@ -299,19 +343,22 @@ class dataContainer(object):
         # them in the right units, and then removes the units from the array
         # so they are easier to work with.
         self.X = self.X.to(u.deg).value
-        self.Xtrain = self.Xtrain.to(u.deg).value
-        self.Xvalid = self.Xvalid.to(u.deg).value
-        self.Xpred = self.Xpred.to(u.deg).value
+        self.Xtrain = Xtrain.to(u.deg).value
+        self.Xvalid = Xvalid.to(u.deg).value
+        self.Xpred = Xpred.to(u.deg).value
         
         self.Y = self.Y.to(u.mas).value
-        self.Ytrain = self.Ytrain.to(u.mas).value
-        self.Yvalid = self.Yvalid.to(u.mas).value
+        self.Ytrain = Ytrain.to(u.mas).value
+        self.Yvalid = Yvalid.to(u.mas).value
         
         self.E_GAIA = self.E_GAIA.to(u.mas).value
+        self.Etrain_GAIA = Etrain_GAIA.to(u.mas).value
+        self.Evalid_GAIA = Evalid_GAIA.to(u.mas).value
+
         self.E_DES = self.E_DES.to(u.mas).value
-        self.Etrain = self.Etrain.to(u.mas).value
-        self.Evalid = self.Evalid.to(u.mas).value
-        self.Epred = self.Epred.to(u.mas).value
+        self.Etrain_DES = Etrain_DES.to(u.mas).value
+        self.Evalid_DES = Evalid_DES.to(u.mas).value
+        self.Epred_DES = Epred.to(u.mas).value
         
         self.nTrain = self.Xtrain.shape[0]
         self.nValid = self.Xvalid.shape[0]
@@ -433,25 +480,6 @@ def getGrid(X1, X2):
     vv1, vv2 = np.meshgrid(v1, v2)
     
     return uu1 - uu2, vv1 - vv2
-
-def gnomonicProjection(X, RA0, dec0, rot=0):
-    """
-    Perform a gnomonic projection on X.
-
-    X must be an astropy SkyCoord object.
-    """
-    pole = co.SkyCoord(RA0, dec0, unit='deg', frame='icrs')
-    frame = pole.skyoffset_frame(rotation=co.Angle(rot, unit='deg'))
-
-    s = X.transform_to(frame)
-
-    # Get 3 components on unit sphere
-    x = np.cos(s.lat.radian)*np.cos(s.lon.radian)
-    y = np.cos(s.lat.radian)*np.sin(s.lon.radian)
-    z = np.sin(s.lat.radian)
-    out_x = y/x * (180. / np.pi)
-    out_y = z/x * (180. / np.pi)
-    return np.array([out_x, out_y]).T
 
 def flat(arr):
     """
