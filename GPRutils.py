@@ -299,21 +299,29 @@ class dataContainer(object):
         nTV = X_tv.shape[0]
         tv_mask = np.arange(nTV)
 
-        # Shuffle these numbers. Now I can take the first X% of these and have a random slice of the data. If I were to simply  take the first X% of the data arrays I would not have a random subset because the arrays are ordered.
+        # Shuffle these numbers. Now I can take the first X% of these and have
+        # a random slice of the data. If I were to simply  take the first X%
+        # of the data arrays I would not have a random subset because the
+        # arrays are ordered.
         rng.shuffle(tv_mask)
 
-        # Figure out the number of data points that should be included based on subSample
+        # Figure out the number of data points that should be included based
+        # on subSample
         nSubSample = int(np.ceil(nTV*subSample))
 
-        # Take only the first nSubSample data points from the mask. Now I can take the first X% of these and have a random slice of (subSample)% of the full dataset.
+        # Take only the first nSubSample data points from the mask. Now I can
+        # take the first X% of these and have a random slice of (subSample)%
+        # of the full dataset.
         tv_mask = tv_mask[:nSubSample]
 
-        # Redefine nTV based on subSample because nTrain and nValid are calculated from it.
+        # Redefine nTV based on subSample because nTrain and nValid are
+        # calculated from it.
         nTV = int(np.ceil(nTV*subSample))
         nTrain = int(np.floor(nTV*train_size))
         nValid = nTV - nTrain
 
-        # Get the training set and validation set slices. When used to index the data arrays, these will retrieve random subsets of the data.
+        # Get the training set and validation set slices. When used to index
+        # the data arrays, these will retrieve random subsets of the data.
         train_mask = tv_mask[:nTrain]
         valid_mask = tv_mask[nTrain:]
 
@@ -418,7 +426,7 @@ class dataContainer(object):
         plotGPR.AstrometricResiduals(
             x, y, dx, dy, err,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
-            savePath=outDir,
+            savePath=savePath,
             plotShow=plotShow,
             exposure=expNum,
             scale=200*u.mas,
@@ -427,7 +435,7 @@ class dataContainer(object):
         plotGPR.DivCurl(
             x, y, dx, dy, err,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
-            savePath=outDir,
+            savePath=savePath,
             plotShow=plotShow,
             exposure=expNum,
             pixelsPerBin=1500)
@@ -435,7 +443,7 @@ class dataContainer(object):
         plotGPR.Correlation(
             x, y, dx, dy,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2,
-            savePath=outDir,
+            savePath=savePath,
             plotShow=plotShow,
             exposure=expNum,
             ylim=(-20, 75))
@@ -443,7 +451,7 @@ class dataContainer(object):
         plotGPR.Correlation2D(
             x, y, dx, dy,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2,
-            savePath=outDir,
+            savePath=savePath,
             plotShow=plotShow,
             exposure=self.expNum,
             nBins=50,
