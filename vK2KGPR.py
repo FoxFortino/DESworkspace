@@ -9,6 +9,7 @@ import scipy.optimize as opt
 from scipy.spatial.ckdtree import cKDTree
 
 
+
 class vonKarman2KernelGPR(object):
 
     def __init__(self, dataContainer, printing=False, outDir="."):
@@ -102,7 +103,7 @@ class vonKarman2KernelGPR(object):
         n1, n2 = Cuv.shape[0], Cuv.shape[1]
         
         K = np.swapaxes(Cuv, 1, 2).reshape(2*n1, 2*n2)
-        W = np.diag(GPRutils.flat(self.dC.Etrain)**2)
+        W = GPRutils.makeW(self.dC.Etrain_GAIA, self.dC.Etrain_DES)
         L = np.linalg.cholesky(K + W)
         
         self.alpha = np.linalg.solve(L, GPRutils.flat(self.dC.Ytrain))

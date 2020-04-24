@@ -49,7 +49,9 @@ class dataContainer(object):
         earthRef="/home/fortino/y6a1.exposures.positions.fits.gz",
         tileRef="/home/fortino/expnum_tile.fits.gz",
         tol=0.5*u.arcsec
-        ):
+    ):
+        """
+        """
 
         # Load in data from a reference tile (tile0). This tile is arbitrary.
         # At the time of implementation, I do not have access to a reference
@@ -460,7 +462,21 @@ class dataContainer(object):
             vmax=40*u.mas**2,
             rmax=0.50*u.deg)
 
-        
+def makeW(E_GAIA, E_DES):
+
+    N = E_GAIA.shape[0]
+    out = np.zeros((N, N, 2, 2))
+    out[:, :, 0, 0] = np.diag(E_GAIA[:, 0, 0])
+    out[:, :, 1, 1] = np.diag(E_GAIA[:, 1, 1])
+    out[:, :, 1, 0] = np.diag(E_GAIA[:, 1, 0])
+    out[:, :, 0, 1] = np.diag(E_GAIA[:, 0, 1])
+    W_GAIA = np.swapaxes(out, 1, 2).reshape((2*N, 2*N))
+
+    E_DES = np.vstack([E_DES, E_DES]).T
+    W_DES = np.diag(flat(E_DES)**2)
+
+    return W_GAIA**2 + W_DES**2
+
 def loadNPZ(file):
     
     data = np.load(file, allow_pickle=True)
