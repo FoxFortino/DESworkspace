@@ -18,8 +18,8 @@ def main(expNum, outDir):
         shutil.rmtree(expFile)
         os.mkdir(expFile)
 
-    dataC = GPRutils.dataContainer(expNum)
-    dataC.sigmaClip()
+    dataC = GPRutils.dataContainer()
+    dataC.load(expNum=expNum)
     dataC.splitData()
 
     GP = vK2KGPR.vonKarman2KernelGPR(dataC, printing=True, outDir=outDir)
