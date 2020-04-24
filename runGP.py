@@ -29,53 +29,58 @@ def main(expNum, outDir):
 
     dataC.saveNPZ(expFile)
 
-    x = dataC.Xvalid[:, 0]*u.deg
-    y = dataC.Xvalid[:, 1]*u.deg
-    dx = dataC.Yvalid[:, 0]*u.mas
-    dy = dataC.Yvalid[:, 1]*u.mas
-    err = dataC.Evalid[:, 0]*u.mas
+    # Don't include all this plotting. Plotting can be done after the fact.
+    # Besides, probably don't want all these plots anyway. Just the data
+    # inside them in order to average them together from a bunch of exposures
+    # and do statistics. Have a separate script for going through directories
+    # and making plots of exposures if we want to.
+    # x = dataC.Xvalid[:, 0]*u.deg
+    # y = dataC.Xvalid[:, 1]*u.deg
+    # dx = dataC.Yvalid[:, 0]*u.mas
+    # dy = dataC.Yvalid[:, 1]*u.mas
+    # err = dataC.Evalid[:, 0]*u.mas
 
-    x2 = dataC.Xvalid[:, 0]*u.deg
-    y2 = dataC.Xvalid[:, 1]*u.deg
-    dx2 = dataC.Yvalid[:, 0]*u.mas - dataC.fbar_s[:, 0]*u.mas
-    dy2 = dataC.Yvalid[:, 1]*u.mas - dataC.fbar_s[:, 1]*u.mas
-    err2 = dataC.Evalid[:, 0]*u.mas
+    # x2 = dataC.Xvalid[:, 0]*u.deg
+    # y2 = dataC.Xvalid[:, 1]*u.deg
+    # dx2 = dataC.Yvalid[:, 0]*u.mas - dataC.fbar_s[:, 0]*u.mas
+    # dy2 = dataC.Yvalid[:, 1]*u.mas - dataC.fbar_s[:, 1]*u.mas
+    # err2 = dataC.Evalid[:, 0]*u.mas
 
-    plotGPR.AstrometricResiduals(
-        x, y, dx, dy, err,
-        x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
-        savePath=outDir,
-        plotShow=False,
-        exposure=expNum,
-        scale=200*u.mas,
-        arrowScale=10*u.mas)
+    # plotGPR.AstrometricResiduals(
+    #     x, y, dx, dy, err,
+    #     x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
+    #     savePath=outDir,
+    #     plotShow=False,
+    #     exposure=expNum,
+    #     scale=200*u.mas,
+    #     arrowScale=10*u.mas)
 
-    plotGPR.DivCurl(
-        x, y, dx, dy, err,
-        x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
-        savePath=outDir,
-        plotShow=False,
-        exposure=expNum,
-        pixelsPerBin=1500)
+    # plotGPR.DivCurl(
+    #     x, y, dx, dy, err,
+    #     x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
+    #     savePath=outDir,
+    #     plotShow=False,
+    #     exposure=expNum,
+    #     pixelsPerBin=1500)
 
-    plotGPR.Correlation(
-        x, y, dx, dy,
-        x2=x2, y2=y2, dx2=dx2, dy2=dy2,
-        savePath=outDir,
-        plotShow=False,
-        exposure=expNum,
-        ylim=(-20, 75))
+    # plotGPR.Correlation(
+    #     x, y, dx, dy,
+    #     x2=x2, y2=y2, dx2=dx2, dy2=dy2,
+    #     savePath=outDir,
+    #     plotShow=False,
+    #     exposure=expNum,
+    #     ylim=(-20, 75))
 
-    plotGPR.Correlation2D(
-        x, y, dx, dy,
-        x2=x2, y2=y2, dx2=dx2, dy2=dy2,
-        savePath=outDir,
-        plotShow=False,
-        exposure=self.expNum,
-        nBins=35,
-        vmin=0*u.mas**2,
-        vmax=50*u.mas**2,
-        rmax=0.50*u.deg)
+    # plotGPR.Correlation2D(
+    #     x, y, dx, dy,
+    #     x2=x2, y2=y2, dx2=dx2, dy2=dy2,
+    #     savePath=outDir,
+    #     plotShow=False,
+    #     exposure=self.expNum,
+    #     nBins=50,
+    #     vmin=0*u.mas**2,
+    #     vmax=40*u.mas**2,
+    #     rmax=0.50*u.deg)
 
 
 if __name__=='__main__':
