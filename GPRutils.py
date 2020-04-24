@@ -137,7 +137,7 @@ class dataContainer(object):
         GAIA_err = np.array(GAIA_tab["error"])*u.deg
 
         # Full covariance matrix
-        GAIA_cov = np.array(GAIA_tab["cov"])
+        GAIA_cov = np.array(GAIA_tab["cov"])*u.mas
         GAIA_cov = np.reshape(GAIA_cov, (GAIA_cov.shape[0], 5, 5))
 
         #--------------------#
@@ -246,7 +246,7 @@ class dataContainer(object):
         # This is an array of (2, 2) covariance matrices. This line selects
         # only the covariance matrices for Gaia stars that have a DES
         # counterpart.
-        self.E_GAIA = cov[ind_GAIA, :, :]
+        self.E_GAIA = cov[self.ind_GAIA, :, :]
 
         # Declare attribute for circular measurement error for DES stars.
         # There is not a (2, 2) covariance matrix for each detection because
@@ -303,6 +303,7 @@ class dataContainer(object):
         # a random slice of the data. If I were to simply  take the first X%
         # of the data arrays I would not have a random subset because the
         # arrays are ordered.
+        rng = np.random.RandomState(self.randomState)
         rng.shuffle(tv_mask)
 
         # Figure out the number of data points that should be included based
@@ -337,8 +338,8 @@ class dataContainer(object):
         # E_DES (measurement error), remove the elements that have a Gaia
         # counterpart (these are already accounted for in the training
         # validation sets).
-        Xpred = np.delete(X, self.ind_DES, axis=0)
-        Epred = np.delete(E_DES, self.ind_DES, axis=0)
+        Xpred = np.delete(self.X, self.ind_DES, axis=0)
+        Epred = np.delete(self.E_DES, self.ind_DES, axis=0)
 
         # Declare these values as attributes because these are important to
         # have when reconstructing the training/validation sets when loading
