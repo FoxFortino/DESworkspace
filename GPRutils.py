@@ -234,7 +234,9 @@ class dataContainer(object):
 
         #--------------------#
 
-        # Declare attribute for the full X array (DES star positions). This array will be split into the training, validation, and prediction sets.
+        # Declare attribute for the full X array (DES star positions).
+        # This array will be split into the training, validation,
+        # and prediction sets.
         self.X = X_gn_DES
 
         # This line performs the subtraction between Gaia stars (indexed by
@@ -390,6 +392,7 @@ class dataContainer(object):
             os.path.join(savePath, f"{self.expNum}.npz"),
             expNum=self.expNum,
             randomState=self.randomState,
+            ind_GAIA=self.ind_GAIA, ind_DES=self.ind_DES,
             nSigma=self.nSigma,
             train_size=self.train_size,
             subSample=self.subSample,
@@ -403,7 +406,7 @@ class dataContainer(object):
 
         x, y = self.Xvalid.T*u.deg
         dx, dy = self.Yvalid.T*u.mas
-        err = self.Evalid[:, 0]*u.mas
+        err = self.Evalid_DES*u.mas
 
         x2, y2 = x, y
         dx2, dy2 = self.Yvalid.T*u.mas - self.fbar_s.T*u.mas
@@ -432,7 +435,7 @@ class dataContainer(object):
             x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
             savePath=savePath,
             plotShow=plotShow,
-            exposure=expNum,
+            exposure=self.expNum,
             scale=200*u.mas,
             arrowScale=10*u.mas)
 
@@ -441,7 +444,7 @@ class dataContainer(object):
             x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
             savePath=savePath,
             plotShow=plotShow,
-            exposure=expNum,
+            exposure=self.expNum,
             pixelsPerBin=1500)
 
         plotGPR.Correlation(
@@ -449,7 +452,7 @@ class dataContainer(object):
             x2=x2, y2=y2, dx2=dx2, dy2=dy2,
             savePath=savePath,
             plotShow=plotShow,
-            exposure=expNum,
+            exposure=self.expNum,
             ylim=(-20, 75))
 
         plotGPR.Correlation2D(
@@ -484,13 +487,17 @@ def loadNPZ(file):
     
     expNum = data["expNum"].item()
     randomState = data["randomState"].item()
+    ind_GAIA = data["ind_GAIA"]
+    ind_DES = data["ind_DES"]
     nSigma = data["nSigma"].item()
     train_size = data["train_size"].item()
     subSample = data["subSample"].item()
 
-    dataC = dataContainer(expNum, randomState)
-    dataC.X, dataC.Y = data["X"], data["Y"]
-    dataC.E_GAIA, dataC.E_DES = data["E_GAIA"], data["E_DES"]
+    dataC = dataContainer(randomState)
+    dataC.expNum = expNum
+    dataC.ind_GAIA, dataC.ind_DES = ind_GAIA, ind_DES
+    dataC.X, dataC.Y = data["X"]*u.deg, data["Y"]*u.mas
+    dataC.E_GAIA, dataC.E_DES = data["E_GAIA"]*u.mas, data["E_DES"]*u.mas
 
     dataC.splitData(nSigma=nSigma, train_size=train_size, subSample=subSample)
 
