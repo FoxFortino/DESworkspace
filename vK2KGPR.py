@@ -70,9 +70,9 @@ class vonKarman2KernelGPR(object):
 
         if v0 is None:
             v0 = np.array([xiplus.max(), 1, 0.1, 0.05, 0.05])
-            simplex0 = np.vstack(
-                [v0, np.vstack([v0]*v0.shape[0]) + np.diag(v0*0.15)]
-            )
+        simplex0 = np.vstack(
+            [v0, np.vstack([v0]*v0.shape[0]) + np.diag(v0*0.15)]
+        )
 
         self.opt_result = opt.fmin(
             figureOfMerit_fitCorr,
@@ -166,8 +166,8 @@ class vonKarman2KernelGPR(object):
         self.opt_result_GP = opt.fmin(
             self.figureOfMerit,
             simplex0[0],
-            xtol=2,
-            ftol=0.002,
+            xtol=1,
+            ftol=0.01,
             maxfun=150,
             full_output=True,
             retall=True,
