@@ -390,6 +390,7 @@ class dataContainer(object):
             os.path.join(savePath, f"{self.expNum}.npz"),
             expNum=self.expNum,
             randomState=self.randomState,
+            nSigma=self.nSigma,
             train_size=self.train_size,
             subSample=self.subSample,
             X=self.X, Y=self.Y,
