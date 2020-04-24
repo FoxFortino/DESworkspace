@@ -49,7 +49,7 @@ class dataContainer(object):
         earthRef="/home/fortino/y6a1.exposures.positions.fits.gz",
         tileRef="/home/fortino/expnum_tile.fits.gz",
         tol=0.5*u.arcsec
-    ):
+        ):
         """
         """
 
@@ -74,16 +74,15 @@ class dataContainer(object):
         # the MJD of the exposure.
         pos_tab = tb.Table.read(earthRef, hdu=1)
         pos_tab = pos_tab[pos_tab["expnum"] == self.expNum]
-        ra0 = pos_tab["ra"][0]*u.deg
-        dec0 = pos_tab["dec"][0]*u.deg
-        DES_obs = Time(pos_tab["mjd_mid"][0], format="mjd")
+        ra0 = np.array(pos_tab["ra"])[0]*u.deg
+        dec0 = np.array(pos_tab["dec"])[0]*u.deg
+        DES_obs = Time(np.array(pos_tab["mjd_mid"])[0], format="mjd")
 
         #--------------------#
 
         # Use tileRef to find all of the tiles that our exposure is a part of.
         tiles_tab = tb.Table.read(tileRef)
-        tiles = tiles_tab[tiles_tab["EXPNUM"] == self.expNum]["TILENAME"]
-
+        tiles = tiles_tab[np.array(tiles_tab["EXPNUM"]) == self.expNum]["TILENAME"]
         #--------------------#
 
         # Create an empty astropy table with all of the necessary columns.
@@ -99,17 +98,13 @@ class dataContainer(object):
                 file = os.path.join(zoneDir, tile)
                 tab = tb.Table.read(file)
                 tab = tab[tab["EXPNUM"] == self.expNum]
-                band = np.unique(tab["BAND"])[0]
-                assert band != "y", "This exposure is in the y band. No."
                 DES_tab = tb.vstack([DES_tab, tab])
             except FileNotFoundError:
-                # print(f"File not found: {file}, continuing without it")
-                # continue
-                print(f"File not found: {file}, quitting...")
-                quit()
+                print(f"File not found: {file}, continuing without it")
+                continue
 
         print(f"Exposure: {self.expNum}")
-        print(f"Band: {np.unique(DES_tab['BAND'])[0]}")
+        print(f"Band: {np.array(np.unique(DES_tab['BAND']))[0]}")
         print(f"Number of objects: {len(DES_tab)}")
 
         # Initialize variables for the relevant columns.
@@ -198,7 +193,7 @@ class dataContainer(object):
         #--------------------#
 
         # Calculate gnomonic projection of the observatory coordinates
-        X_E = pos_tab["observatory"][0]
+        X_E = np.array(pos_tab["observatory"])[0]
         X_gn_E = np.dot(M, X_E)
 
         # Calculate time difference between DES and Gaia observations.

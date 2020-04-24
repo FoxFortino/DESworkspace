@@ -22,7 +22,7 @@ def main(expNum, outDir):
     dataC.load(expNum=expNum)
     dataC.splitData()
 
-    GP = vK2KGPR.vonKarman2KernelGPR(dataC, printing=True, outDir=outDir)
+    GP = vK2KGPR.vonKarman2KernelGPR(dataC, printing=True, outDir=expFile)
     GP.fitCorr()
     GP.optimize()
     GP.fit(GP.opt_result_GP[0])
@@ -32,7 +32,7 @@ def main(expNum, outDir):
 
 
 if __name__=='__main__':
-    expNum = sys.argv[1]
+    expNum = int(sys.argv[1])
     outDir = sys.argv[2]
 
     main(expNum, outDir)
