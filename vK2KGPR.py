@@ -78,8 +78,8 @@ class vonKarman2KernelGPR(object):
         self.opt_result = opt.fmin(
             figureOfMerit_fitCorr,
             simplex0[0],
-            xtol=5,
-            ftol=1,
+            xtol=.5,
+            ftol=.1,
             maxfun=150,
             full_output=True,
             retall=True,

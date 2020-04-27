@@ -110,7 +110,7 @@ class dataContainer(object):
         # Initialize variables for the relevant columns.
         DES_ra = np.array(DES_tab["NEW_RA"])*u.deg
         DES_dec = np.array(DES_tab["NEW_DEC"])*u.deg
-        DES_err = np.array(DES_tab["ERRAWIN_WORLD"])*u.deg**2
+        DES_err = (np.array(DES_tab["ERRAWIN_WORLD"])*u.deg)**2
 
         #--------------------#
 
@@ -401,7 +401,7 @@ class dataContainer(object):
 
         x, y = self.Xvalid.T*u.deg
         dx, dy = self.Yvalid.T*u.mas
-        err = self.Evalid_DES*u.mas
+        err = np.sqrt(self.Evalid_DES)*u.mas
 
         x2, y2 = x, y
         dx2, dy2 = self.Yvalid.T*u.mas - self.fbar_s.T*u.mas
