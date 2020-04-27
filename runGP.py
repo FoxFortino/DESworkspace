@@ -26,7 +26,7 @@ def main(expNum, outDir):
     GP.fitCorr()
     GP.optimize()
     GP.fit(GP.opt_result_GP[0])
-    GP.predict(dataC.Xpred)
+    GP.predict(dataC.Xvalid)
 
     dataC.saveNPZ(expFile)
 

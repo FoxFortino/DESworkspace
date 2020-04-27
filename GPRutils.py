@@ -110,7 +110,7 @@ class dataContainer(object):
         # Initialize variables for the relevant columns.
         DES_ra = np.array(DES_tab["NEW_RA"])*u.deg
         DES_dec = np.array(DES_tab["NEW_DEC"])*u.deg
-        DES_err = np.array(DES_tab["ERRAWIN_WORLD"])*u.deg
+        DES_err = np.array(DES_tab["ERRAWIN_WORLD"])*u.deg**2
 
         #--------------------#
 
@@ -134,7 +134,7 @@ class dataContainer(object):
         GAIA_err = np.array(GAIA_tab["error"])*u.deg
 
         # Full covariance matrix
-        GAIA_cov = np.array(GAIA_tab["cov"])*u.mas
+        GAIA_cov = np.array(GAIA_tab["cov"])*u.mas**2
         GAIA_cov = np.reshape(GAIA_cov, (GAIA_cov.shape[0], 5, 5))
 
         #--------------------#
@@ -203,17 +203,17 @@ class dataContainer(object):
 
         # Calculate coefficient matrix in appropriate units.
         A = np.array([
-            [1, 0, dt, 0, X_gn_E[0]],
-            [0, 1, 0, dt, X_gn_E[1]]
+            [1, 0, X_gn_E[0], dt, 0],
+            [0, 1, X_gn_E[1], 0, dt]
         ])
 
         # Calculate the variable array in appropriate units.
         X = np.vstack([
             X_gn_GAIA[:, 0].value,
             X_gn_GAIA[:, 1].value,
+            GAIA_parallax.to(u.deg).value,
             GAIA_pmra_cosdec.to(u.deg/u.yr).value,
-            GAIA_pmdec.to(u.deg/u.yr).value,
-            GAIA_parallax.to(u.deg).value
+            GAIA_pmdec.to(u.deg/u.yr).value
         ])
 
         # Perform epoch transformation
@@ -359,14 +359,14 @@ class dataContainer(object):
         self.Ytrain = Ytrain.to(u.mas).value
         self.Yvalid = Yvalid.to(u.mas).value
         
-        self.E_GAIA = self.E_GAIA.to(u.mas).value
-        self.Etrain_GAIA = Etrain_GAIA.to(u.mas).value
-        self.Evalid_GAIA = Evalid_GAIA.to(u.mas).value
+        self.E_GAIA = self.E_GAIA.to(u.mas**2).value
+        self.Etrain_GAIA = Etrain_GAIA.to(u.mas**2).value
+        self.Evalid_GAIA = Evalid_GAIA.to(u.mas**2).value
 
-        self.E_DES = self.E_DES.to(u.mas).value
-        self.Etrain_DES = Etrain_DES.to(u.mas).value
-        self.Evalid_DES = Evalid_DES.to(u.mas).value
-        self.Epred_DES = Epred.to(u.mas).value
+        self.E_DES = self.E_DES.to(u.mas**2).value
+        self.Etrain_DES = Etrain_DES.to(u.mas**2).value
+        self.Evalid_DES = Evalid_DES.to(u.mas**2).value
+        self.Epred_DES = Epred.to(u.mas**2).value
         
         self.nTrain = self.Xtrain.shape[0]
         self.nValid = self.Xvalid.shape[0]
@@ -379,7 +379,7 @@ class dataContainer(object):
         print(f"{self.nData} total detections")
         print(f"{self.nTrain} training set detections")
         print(f"{self.nValid} validation set detections")
-        print(f"{self.nPred} prediiction set detections")
+        print(f"{self.nPred} prediction set detections")
 
     def saveNPZ(self, savePath):
 
@@ -472,9 +472,9 @@ def makeW(E_GAIA, E_DES):
     W_GAIA = np.swapaxes(out, 1, 2).reshape((2*N, 2*N))
 
     E_DES = np.vstack([E_DES, E_DES]).T
-    W_DES = np.diag(flat(E_DES)**2)
+    W_DES = np.diag(flat(E_DES))
 
-    return W_GAIA**2 + W_DES**2
+    return W_GAIA + W_DES
 
 def loadNPZ(file):
     
