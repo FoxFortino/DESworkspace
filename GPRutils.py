@@ -51,6 +51,7 @@ class dataContainer(object):
         tol=0.5*u.arcsec
         ):
         """
+        Docs go here :)
         """
 
         # Load in data from a reference tile (tile0). This tile is arbitrary.
@@ -293,6 +294,13 @@ class dataContainer(object):
         Y_tv = self.Y[mask]
         E_tv_GAIA = self.E_GAIA[mask]
         E_tv_DES = self.E_DES[self.ind_DES][mask]
+
+        # Remove a 3rd order polynomial fit from the residuals.
+        poly = Poly2d(3)
+        poly.fit(X_tv[:, 0], X_tv[:, 1], Y_tv[:, 0])
+        Y_tv[:, 0] -= poly.evaluate(X_tv[:, 0], X_tv[:, 1])
+        poly.fit(X_tv[:, 0], X_tv[:, 1], Y_tv[:, 1])
+        Y_tv[:, 1] -= poly.evaluate(X_tv[:, 0], X_tv[:, 1])
 
         # Generate an array of numbers from 0 to nTV-1.
         nTV = X_tv.shape[0]
