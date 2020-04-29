@@ -294,13 +294,13 @@ class dataContainer(object):
         Y_tv = self.Y[mask]
         E_tv_GAIA = self.E_GAIA[mask]
         E_tv_DES = self.E_DES[self.ind_DES][mask]
-
+        
         # Remove a 3rd order polynomial fit from the residuals.
         poly = Poly2d(3)
-        poly.fit(X_tv[:, 0], X_tv[:, 1], Y_tv[:, 0])
-        Y_tv[:, 0] -= poly.evaluate(X_tv[:, 0], X_tv[:, 1])
-        poly.fit(X_tv[:, 0], X_tv[:, 1], Y_tv[:, 1])
-        Y_tv[:, 1] -= poly.evaluate(X_tv[:, 0], X_tv[:, 1])
+        poly.fit(X_tv[:, 0].value, X_tv[:, 1].value, Y_tv[:, 0].value)
+        Y_tv[:, 0] -= poly.evaluate(X_tv[:, 0].value, X_tv[:, 1].value)*u.deg
+        poly.fit(X_tv[:, 0].value, X_tv[:, 1].value, Y_tv[:, 1].value)
+        Y_tv[:, 1] -= poly.evaluate(X_tv[:, 0].value, X_tv[:, 1].value)*u.deg
 
         # Generate an array of numbers from 0 to nTV-1.
         nTV = X_tv.shape[0]
@@ -388,6 +388,30 @@ class dataContainer(object):
         print(f"{self.nTrain} training set detections")
         print(f"{self.nValid} validation set detections")
         print(f"{self.nPred} prediction set detections")
+        
+    def makeMasks(self, GP):
+        
+        GP.predict(self.Xvalid)
+        mask = stats.sigma_clip(
+            self.Yvalid - self.fbar_s,
+            sigma=4, axis=0).mask
+        mask = ~np.logical_or(*mask.T)
+        self.Xvalid = self.Xvalid[mask]
+        self.Yvalid = self.Yvalid[mask]
+        self.Evalid_DES = self.Evalid_DES[mask]
+        self.Evalid_GAIA = self.Evalid_GAIA[mask]
+        self.maskValid = mask
+
+        GP.predict(self.Xtrain)
+        mask = stats.sigma_clip(
+            self.Ytrain - self.fbar_s,
+            sigma=4, axis=0).mask
+        mask = ~np.logical_or(*mask.T)
+        self.Xtrain = self.Xtrain[mask]
+        self.Ytrain = self.Ytrain[mask]
+        self.Etrain_DES = self.Etrain_DES[mask]
+        self.Etrain_GAIA = self.Etrain_GAIA[mask]
+        self.maskTrain = mask
 
     def saveNPZ(self, savePath):
 
@@ -399,8 +423,21 @@ class dataContainer(object):
             nSigma=self.nSigma,
             train_size=self.train_size,
             subSample=self.subSample,
-            X=self.X, Y=self.Y,
-            E_GAIA=self.E_GAIA, E_DES=self.E_DES,
+            maskValid=self.maskValid, maskTrain=self.maskTrain,
+            X=self.X,
+            Xtrain=self.Xtrain,
+            Xvalid=self.Xvalid,
+            Xpred=self.Xpred,
+            Y=self.Y,
+            Ytrain=self.Ytrain,
+            Yvalid=self.Yvalid,
+            E_GAIA=self.E_GAIA,
+            Etrain_GAIA=self.Etrain_GAIA,
+            Evalid_GAIA=self.Evalid_GAIA,
+            E_DES=self.E_DES,
+            Etrain_DES=self.Etrain_DES,
+            Evalid_DES=self.Evalid_DES,
+            Epred_DES=self.Epred_DES,
             params=self.params,
             fbar_s=self.fbar_s
             )
@@ -498,11 +535,29 @@ def loadNPZ(file):
 
     dataC = dataContainer(randomState)
     dataC.expNum = expNum
-    dataC.ind_GAIA, dataC.ind_DES = ind_GAIA, ind_DES
-    dataC.X, dataC.Y = data["X"]*u.deg, data["Y"]*u.mas
-    dataC.E_GAIA, dataC.E_DES = data["E_GAIA"]*u.mas, data["E_DES"]*u.mas
-
-    dataC.splitData(nSigma=nSigma, train_size=train_size, subSample=subSample)
+    dataC.ind_GAIA = ind_GAIA
+    dataC.ind_DES = ind_DES
+    
+    dataC.maskValid = data["maskValid"]
+    dataC.maskTrain = data["maskTrain"]
+    
+    dataC.X = data["X"]
+    dataC.Xtrain = data["Xtrain"]
+    dataC.Xvalid = data["Xvalid"]
+    dataC.Xpred = data["Xpred"]
+        
+    dataC.Y = data["Y"]
+    dataC.Ytrain = data["Ytrain"]
+    dataC.Yvalid = data["Yvalid"]
+        
+    dataC.E_GAIA  = data["E_GAIA"]
+    dataC.Etrain_GAIA = data["Etrain_GAIA"]
+    dataC.Evalid_GAIA = data["Evalid_GAIA"]
+    
+    dataC.E_DES = data["E_DES"]
+    dataC.Etrain_DES = data["Etrain_DES"]
+    dataC.Evalid_DES = data["Evalid_DES"]
+    dataC.Epred_DES = data["Epred_DES"]
 
     dataC.params = data["params"]
     dataC.fbar_s = data["fbar_s"]
