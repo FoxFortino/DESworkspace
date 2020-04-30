@@ -123,20 +123,9 @@ class vonKarman2KernelGPR(object):
 
     def figureOfMerit(self, params):
 
-        self.fit(params)
-        self.predict(self.dC.Xvalid)
-
-        res = self.dC.Yvalid - self.dC.fbar_s
-        kdt = cKDTree(self.dC.Xvalid)
-
-        rMax = (0.02*u.deg).to(u.deg).value
-        rMin = (5*u.mas).to(u.deg).value
-
-        prs_set = kdt.query_pairs(rMax, output_type='set')
-        prs_set -= kdt.query_pairs(rMin, output_type='set')
-        prs = np.array(list(prs_set))
-
-        xiplus = np.mean(np.sum(res[prs[:, 0]] * res[prs[:, 1]], axis=1))
+        xiplus, Uerr, Verr = GPRutils.getXi(
+            self.dC.Xvalid, self.dC.Yvalid, self.dC.fbar_s,
+            rMax = 0.02*u.deg, rMin=5*u.mas)
 
         if self.printing:
             theta = {
