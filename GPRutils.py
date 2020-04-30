@@ -506,6 +506,24 @@ class dataContainer(object):
             vmax=40*u.mas**2,
             rmax=0.50*u.deg)
 
+def getXi(X, Y, fbar_s, rMax=0.02*u.deg, rMin=5*u.mas)
+        res = Y - fbar_s
+        kdt = cKDTree(X)
+
+        rMax = rMax.to(u.deg).value
+        rMin = rMin.to(u.deg).value
+
+        prs_set = kdt.query_pairs(rMax, output_type='set')
+        prs_set -= kdt.query_pairs(rMin, output_type='set')
+        prs = np.array(list(prs_set))
+
+        xiplus = np.mean(np.sum(res[prs[:, 0]] * res[prs[:, 1]], axis=1))
+
+        err = np.std(res[prs[:, 0]] * res[prs[:, 1]], axis=0) / np.sqrt(prs.shape[0])
+
+        return xiplus, Uerr, Verr
+
+
 def makeW(E_GAIA, E_DES):
 
     N = E_GAIA.shape[0]
