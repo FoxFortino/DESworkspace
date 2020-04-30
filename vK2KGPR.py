@@ -124,7 +124,7 @@ class vonKarman2KernelGPR(object):
     def figureOfMerit(self, params):
 
         xiplus, Uerr, Verr = GPRutils.getXi(
-            self.dC.Xvalid, self.dC.Yvalid, self.dC.fbar_s,
+            self.dC.Xvalid, self.dC.Yvalid - self.dC.fbar_s,
             rMax = 0.02*u.deg, rMin=5*u.mas)
 
         if self.printing:

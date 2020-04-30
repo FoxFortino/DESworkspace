@@ -506,8 +506,8 @@ class dataContainer(object):
             vmax=40*u.mas**2,
             rmax=0.50*u.deg)
 
-def getXi(X, Y, fbar_s, rMax=0.02*u.deg, rMin=5*u.mas)
-        res = Y - fbar_s
+def getXi(X, Y, rMax=0.02*u.deg, rMin=5*u.mas)
+        res = Y
         kdt = cKDTree(X)
 
         rMax = rMax.to(u.deg).value
