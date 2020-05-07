@@ -423,7 +423,7 @@ class dataContainer(object):
             nSigma=self.nSigma,
             train_size=self.train_size,
             subSample=self.subSample,
-            maskValid=self.maskValid, maskTrain=self.maskTrain,
+#             maskValid=self.maskValid, maskTrain=self.maskTrain,
             X=self.X,
             Xtrain=self.Xtrain,
             Xvalid=self.Xvalid,
@@ -506,7 +506,7 @@ class dataContainer(object):
             vmax=40*u.mas**2,
             rmax=0.50*u.deg)
 
-def getXi(X, Y, rMax=0.02*u.deg, rMin=5*u.mas)
+def getXi(X, Y, rMax=0.02*u.deg, rMin=5*u.mas):
         res = Y
         kdt = cKDTree(X)
 
@@ -520,6 +520,7 @@ def getXi(X, Y, rMax=0.02*u.deg, rMin=5*u.mas)
         xiplus = np.mean(np.sum(res[prs[:, 0]] * res[prs[:, 1]], axis=1))
 
         err = np.std(res[prs[:, 0]] * res[prs[:, 1]], axis=0) / np.sqrt(prs.shape[0])
+        Uerr, Verr = err
 
         return xiplus, Uerr, Verr
 
@@ -556,8 +557,8 @@ def loadNPZ(file):
     dataC.ind_GAIA = ind_GAIA
     dataC.ind_DES = ind_DES
     
-    dataC.maskValid = data["maskValid"]
-    dataC.maskTrain = data["maskTrain"]
+#     dataC.maskValid = data["maskValid"]
+#     dataC.maskTrain = data["maskTrain"]
     
     dataC.X = data["X"]
     dataC.Xtrain = data["Xtrain"]
