@@ -122,6 +122,10 @@ class vonKarman2KernelGPR(object):
         self.dC.fbar_s = GPRutils.unflat(np.dot(Ks.T, self.alpha))
 
     def figureOfMerit(self, params):
+        
+        
+        self.fit(params)
+        self.predict(self.dC.Xvalid)
 
         xiplus, Uerr, Verr = GPRutils.getXi(
             self.dC.Xvalid, self.dC.Yvalid - self.dC.fbar_s,
