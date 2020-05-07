@@ -204,8 +204,8 @@ class dataContainer(object):
 
         # Calculate coefficient matrix in appropriate units.
         A = np.array([
-            [1, 0, X_gn_E[0], dt, 0],
-            [0, 1, X_gn_E[1], 0, dt]
+            [1, 0, -X_gn_E[0], dt, 0],
+            [0, 1, -X_gn_E[1], 0, dt]
         ])
 
         # Calculate the variable array in appropriate units.
