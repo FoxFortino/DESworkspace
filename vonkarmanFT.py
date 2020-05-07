@@ -80,7 +80,7 @@ class TurbulentLayer:
         uv = np.fft.irfft2(kx*ky*pspec)
         vv = np.fft.irfft2(ky*ky*pspec)
         # Normalize total variance
-        norm = variance / (uu[dc,dc] + vv[dc,dc])
+        norm = np.abs(variance) / (uu[dc,dc] + vv[dc,dc])
         uu *= norm
         uv *= norm
         vv *= norm
