@@ -7,6 +7,6 @@
 #$ -V
 
 
-python runGP.py
+python runGP3.py
 
 
