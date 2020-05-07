@@ -396,7 +396,12 @@ class dataContainer(object):
             self.Yvalid - self.fbar_s,
             sigma=4, axis=0).mask
         mask = ~np.logical_or(*mask.T)
-        self.nRV = self.Xvalid.shape[0] - self.Xvalid[mask].shape[0]
+        self.Xvalid0 = self.Xvalid
+        self.Yvalid0 = self.Yvalid
+        self.Evalid0_DES = self.Evalid_DES
+        self.Evalid0_GAIA = self.Evalid_GAIA
+        self.fbar_s_valid = self.fbar_s
+
         self.Xvalid = self.Xvalid[mask]
         self.Yvalid = self.Yvalid[mask]
         self.Evalid_DES = self.Evalid_DES[mask]
@@ -407,7 +412,12 @@ class dataContainer(object):
             self.Ytrain - self.fbar_s,
             sigma=4, axis=0).mask
         mask = ~np.logical_or(*mask.T)
-        self.nRT = self.Xtrain.shape[0] - self.Xtrain[mask].shape[0]
+        self.Xtrain0 = self.Xtrain
+        self.Ytrain0 = self.Ytrain
+        self.Etrain0_DES = self.Etrain_DES
+        self.Etrain0_GAIA = self.Etrain_GAIA
+        self.fbar_s_valid = self.fbar_s
+
         self.Xtrain = self.Xtrain[mask]
         self.Ytrain = self.Ytrain[mask]
         self.Etrain_DES = self.Etrain_DES[mask]
@@ -424,22 +434,22 @@ class dataContainer(object):
             train_size=self.train_size,
             subSample=self.subSample,
             X=self.X,
-            Xtrain=self.Xtrain,
-            Xvalid=self.Xvalid,
+            Xtrain=self.Xtrain, Xtrain0=self.Xtrain0,
+            Xvalid=self.Xvalid, Xvalid0=self.Xvalid0,
             Xpred=self.Xpred,
             Y=self.Y,
-            Ytrain=self.Ytrain,
-            Yvalid=self.Yvalid,
+            Ytrain=self.Ytrain, Ytrain0=self.Ytrain0,
+            Yvalid=self.Yvalid, Yvalid0=self.Yvalid0,
             E_GAIA=self.E_GAIA,
-            Etrain_GAIA=self.Etrain_GAIA,
-            Evalid_GAIA=self.Evalid_GAIA,
+            Etrain_GAIA=self.Etrain_GAIA, Etrain0_GAIA=self.Etrain0_GAIA,
+            Evalid_GAIA=self.Evalid_GAIA, Evalid0_GAIA=self.Evalid0_GAIA,
             E_DES=self.E_DES,
-            Etrain_DES=self.Etrain_DES,
-            Evalid_DES=self.Evalid_DES,
+            Etrain_DES=self.Etrain_DES, Etrain0_DES=self.Etrain0_DES,
+            Evalid_DES=self.Evalid_DES, Evalid0_DES=self.Evalid0_DES,
             Epred_DES=self.Epred_DES,
             params=self.params,
             fbar_s=self.fbar_s,
-            nRT=self.nRT, nRV=self.nRV
+            fbar_s_train=self.fbar_s_train, fbar_s_valid=self.fbar_s_valid
             )
 
     def quickPlot(self, plotShow=True, savePath=None, sigmaClip=None):
@@ -559,25 +569,27 @@ def loadNPZ(file):
     dataC.nRV = data["nRV"].item()
     
     dataC.X = data["X"]
-    dataC.Xtrain = data["Xtrain"]
-    dataC.Xvalid = data["Xvalid"]
+    dataC.Xtrain = data["Xtrain"], dataC.Xtrain0 = data["Xtrain0"]
+    dataC.Xvalid = data["Xvalid"], dataC.Xvalid0 = data["Xvalid0"]
     dataC.Xpred = data["Xpred"]
         
     dataC.Y = data["Y"]
-    dataC.Ytrain = data["Ytrain"]
-    dataC.Yvalid = data["Yvalid"]
+    dataC.Ytrain = data["Ytrain"], dataC.Ytrain0 = data["Ytrain0"]
+    dataC.Yvalid = data["Yvalid"], dataC.Yvalid0 = data["Yvalid0"]
         
     dataC.E_GAIA  = data["E_GAIA"]
-    dataC.Etrain_GAIA = data["Etrain_GAIA"]
-    dataC.Evalid_GAIA = data["Evalid_GAIA"]
+    dataC.Etrain_GAIA = data["Etrain_GAIA"], dataC.Etrain0_GAIA = data["Etrain0_GAIA"]
+    dataC.Evalid_GAIA = data["Evalid_GAIA"], dataC.Evalid0_GAIA = data["Evalid0_GAIA"]
     
     dataC.E_DES = data["E_DES"]
-    dataC.Etrain_DES = data["Etrain_DES"]
-    dataC.Evalid_DES = data["Evalid_DES"]
+    dataC.Etrain_DES = data["Etrain_DES"], dataC.Etrain0_DES = data["Etrain0_DES"]
+    dataC.Evalid_DES = data["Evalid_DES"], dataC.Evalid0_DES = data["Evalid0_DES"]
     dataC.Epred_DES = data["Epred_DES"]
 
     dataC.params = data["params"]
     dataC.fbar_s = data["fbar_s"]
+    dataC.fbar_s_train = data["fbar_s_train"]
+    dataC.fbar_s_valid = data["fbar_s_valid"]
     
     return dataC
 
