@@ -16,14 +16,17 @@ def main(expNum, expFile):
     dataC = GPRutils.dataContainer()
     dataC.load(expNum=expNum)
     dataC.splitData()
+    t1 = time()*u.s
 
     GP = vK2KGPR.vonKarman2KernelGPR(dataC, printing=True, outDir=expFile)
     GP.fitCorr()
+    t2 = time()*u.s
+
     GP.fit(GP.opt_result[0])
+    t3 = time()*u.s
+
     dataC.makeMasks(GP)
-    
-    t1 = time()*u.s
-    print(f"Time until optimization: {(t1-t0).to(u.hr)}")
+    t4 = time()*u.s
     
     try:
         GP.optimize()
@@ -33,14 +36,24 @@ def main(expNum, expFile):
             file.write(str(GP.dC.params) + "\n")
         return
     finally:
-        t2 = time()*u.s
-        print(f"Time of optimization: {(t2-t1).to(u.hr)}")
+        t5 = time()*u.s
         
     GP.fit(GP.opt_result_GP[0])
+    t6 = time()*u.s
+
     GP.predict(dataC.Xvalid)
+    t7 = time()*u.s
 
     dataC.saveNPZ(expFile)
     tf = time()*u.s
+
+    print(f"Loading and splitting data: {(t1-t0).to(u.hr)}")
+    print(f"fitCorr: {(t2-t1).to(u.hr)}")
+    print(f"Fitting: {(t3-t2).to(u.hr)}")
+    print(f"Sigma clipping: {(t4-t3).to(u.hr)}")
+    print(f"Optimizing: {(t5-t4).to(u.hr)}")
+    print(f"Fitting 2: {(t6-t5).to(u.hr)}")
+    print(f"Final prediction: {(t7-t6).to(u.hr)}")
     print(f"Total modeling time: {(tf-t0).to(u.hr)}")
 
 
