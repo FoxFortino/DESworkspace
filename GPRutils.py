@@ -396,22 +396,22 @@ class dataContainer(object):
             self.Yvalid - self.fbar_s,
             sigma=4, axis=0).mask
         mask = ~np.logical_or(*mask.T)
+        self.nRV = self.Xvalid.shape[0] - self.Xvalid[mask].shape[0]
         self.Xvalid = self.Xvalid[mask]
         self.Yvalid = self.Yvalid[mask]
         self.Evalid_DES = self.Evalid_DES[mask]
         self.Evalid_GAIA = self.Evalid_GAIA[mask]
-        self.maskValid = mask
 
         GP.predict(self.Xtrain)
         mask = stats.sigma_clip(
             self.Ytrain - self.fbar_s,
             sigma=4, axis=0).mask
         mask = ~np.logical_or(*mask.T)
+        self.nRT = self.Xtrain.shape[0] - self.Xtrain[mask].shape[0]
         self.Xtrain = self.Xtrain[mask]
         self.Ytrain = self.Ytrain[mask]
         self.Etrain_DES = self.Etrain_DES[mask]
         self.Etrain_GAIA = self.Etrain_GAIA[mask]
-        self.maskTrain = mask
 
     def saveNPZ(self, savePath):
 
@@ -423,7 +423,6 @@ class dataContainer(object):
             nSigma=self.nSigma,
             train_size=self.train_size,
             subSample=self.subSample,
-#             maskValid=self.maskValid, maskTrain=self.maskTrain,
             X=self.X,
             Xtrain=self.Xtrain,
             Xvalid=self.Xvalid,
@@ -439,7 +438,8 @@ class dataContainer(object):
             Evalid_DES=self.Evalid_DES,
             Epred_DES=self.Epred_DES,
             params=self.params,
-            fbar_s=self.fbar_s
+            fbar_s=self.fbar_s,
+            nRT=self.nRT, nRV=self.nRV
             )
 
     def quickPlot(self, plotShow=True, savePath=None, sigmaClip=None):
@@ -524,7 +524,6 @@ def getXi(X, Y, rMax=0.02*u.deg, rMin=5*u.mas):
 
         return xiplus, Uerr, Verr
 
-
 def makeW(E_GAIA, E_DES):
 
     N = E_GAIA.shape[0]
@@ -556,9 +555,8 @@ def loadNPZ(file):
     dataC.expNum = expNum
     dataC.ind_GAIA = ind_GAIA
     dataC.ind_DES = ind_DES
-    
-#     dataC.maskValid = data["maskValid"]
-#     dataC.maskTrain = data["maskTrain"]
+    dataC.nRT = data["nRT"].item()
+    dataC.nRV = data["nRV"].item()
     
     dataC.X = data["X"]
     dataC.Xtrain = data["Xtrain"]
