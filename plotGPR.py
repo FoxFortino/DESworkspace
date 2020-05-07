@@ -165,7 +165,7 @@ def AstrometricResiduals(
                          fontsize=10, **{"fontname": "monospace"},
                          transform=fig.transFigure,
                          ha="right")
-        axes[0].text(0.51, 0.87, f"{nData} stars",
+        axes[0].text(0.51, 0.87, f"{nData} Sources",
                      fontsize=10, **{"fontname": "monospace"},
                      transform=fig.transFigure,
                      ha="left")
@@ -215,13 +215,14 @@ def AstrometricResiduals(
                      fontsize=10, **{"fontname": "monospace"},
                      transform=fig.transFigure,
                      ha="left")
-        plt.text(0.75, 0.90, f"{nData} stars",
+        plt.text(0.75, 0.90, f"{nData} sources",
                  fontsize=10, **{"fontname": "monospace"},
                  transform=fig.transFigure,
                  ha="left")
         
         plt.gca().set_aspect('equal')
         plt.grid()
+#         plt.axis("off")
 
     xyBuffer = 0.05*u.deg
     plt.xlim((np.min(x) - xyBuffer).value, (np.max(x) + xyBuffer).value)
@@ -403,7 +404,7 @@ def DivCurl(
                             fontsize=10, **{"fontname": "monospace"},
                             transform=fig.transFigure,
                             ha="left")
-        axes[0, 0].text(0.15, 0.90, f"{nData} stars",
+        axes[0, 0].text(0.15, 0.90, f"{nData} Sources",
                         fontsize=10, **{"fontname": "monospace"},
                         transform=fig.transFigure,
                         ha="left")
@@ -422,6 +423,7 @@ def DivCurl(
             cmap="Spectral",
             vmin=-scale,
             vmax=scale)
+#         axes[0].set_title("Divergence", fontsize=14, **{"fontname": "serif"})
         axes[0].set_title("Divergence", fontsize=14)
         axes[0].text(0.35, 0.7, f"RMS\n{np.round(vardiv, 2)}",
                      fontsize=12,
@@ -436,6 +438,7 @@ def DivCurl(
             cmap="Spectral",
             vmin=-scale,
             vmax=scale)
+#         axes[1].set_title("Curl", fontsize=14, **{"fontname": "serif"})
         axes[1].set_title("Curl", fontsize=14)
         axes[1].text(0.7, 0.7, f"RMS\n{np.round(varcurl, 2)}",
                      fontsize=12,
@@ -454,7 +457,7 @@ def DivCurl(
                      fontsize=10, **{"fontname": "monospace"},
                      transform=fig.transFigure,
                      ha="left")
-        plt.text(0.15, 0.82, f"{nData} stars",
+        plt.text(0.15, 0.82, f"{nData} sources",
                  fontsize=10, **{"fontname": "monospace"},
                  transform=fig.transFigure,
                  ha="left")
@@ -630,8 +633,8 @@ def Correlation(
         ratios.insert(0, f"{ratiotitle:<20}")
         
     corrInfo = f"Exposure {exposure}" + "\n"
-    corrInfo += f"{len(x)} Stars Evaluated" + "\n"
-    corrInfo += f"Stars with separation <= {sep}..." + "\n"
+    corrInfo += f"{len(x)} Sources Evaluated" + "\n"
+    corrInfo += f"Sources with separation <= {sep}..." + "\n"
     corrInfo += "".join([f"{corr:<10}" for corr in corrTypes]) + "\n"
     if data2:
         corrInfo += "".join(means) + "\n"
@@ -783,7 +786,7 @@ def Correlation2D(
                  fontsize=10, **{"fontname": "monospace"},
                  transform=fig.transFigure,
                  ha="left")
-    plt.text(0.1, 0.83, f"{nData} stars",
+    plt.text(0.1, 0.83, f"{nData} Sources",
              fontsize=10, **{"fontname": "monospace"},
              transform=fig.transFigure,
              ha="left")
