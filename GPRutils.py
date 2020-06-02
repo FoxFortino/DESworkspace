@@ -416,8 +416,8 @@ class dataContainer(object):
         self.Ytrain0 = self.Ytrain
         self.Etrain0_DES = self.Etrain_DES
         self.Etrain0_GAIA = self.Etrain_GAIA
-        self.fbar_s_valid = self.fbar_s
-
+        self.fbar_s_train = self.fbar_s
+    
         self.Xtrain = self.Xtrain[mask]
         self.Ytrain = self.Ytrain[mask]
         self.Etrain_DES = self.Etrain_DES[mask]
@@ -565,25 +565,31 @@ def loadNPZ(file):
     dataC.expNum = expNum
     dataC.ind_GAIA = ind_GAIA
     dataC.ind_DES = ind_DES
-    dataC.nRT = data["nRT"].item()
-    dataC.nRV = data["nRV"].item()
     
     dataC.X = data["X"]
-    dataC.Xtrain = data["Xtrain"], dataC.Xtrain0 = data["Xtrain0"]
-    dataC.Xvalid = data["Xvalid"], dataC.Xvalid0 = data["Xvalid0"]
+    dataC.Xtrain = data["Xtrain"]
+    dataC.Xtrain0 = data["Xtrain0"]
+    dataC.Xvalid = data["Xvalid"]
+    dataC.Xvalid0 = data["Xvalid0"]
     dataC.Xpred = data["Xpred"]
         
     dataC.Y = data["Y"]
-    dataC.Ytrain = data["Ytrain"], dataC.Ytrain0 = data["Ytrain0"]
-    dataC.Yvalid = data["Yvalid"], dataC.Yvalid0 = data["Yvalid0"]
+    dataC.Ytrain = data["Ytrain"]
+    dataC.Ytrain0 = data["Ytrain0"]
+    dataC.Yvalid = data["Yvalid"]
+    dataC.Yvalid0 = data["Yvalid0"]
         
     dataC.E_GAIA  = data["E_GAIA"]
-    dataC.Etrain_GAIA = data["Etrain_GAIA"], dataC.Etrain0_GAIA = data["Etrain0_GAIA"]
-    dataC.Evalid_GAIA = data["Evalid_GAIA"], dataC.Evalid0_GAIA = data["Evalid0_GAIA"]
+    dataC.Etrain_GAIA = data["Etrain_GAIA"]
+    dataC.Etrain0_GAIA = data["Etrain0_GAIA"]
+    dataC.Evalid_GAIA = data["Evalid_GAIA"]
+    dataC.Evalid0_GAIA = data["Evalid0_GAIA"]
     
     dataC.E_DES = data["E_DES"]
-    dataC.Etrain_DES = data["Etrain_DES"], dataC.Etrain0_DES = data["Etrain0_DES"]
-    dataC.Evalid_DES = data["Evalid_DES"], dataC.Evalid0_DES = data["Evalid0_DES"]
+    dataC.Etrain_DES = data["Etrain_DES"]
+    dataC.Etrain0_DES = data["Etrain0_DES"]
+    dataC.Evalid_DES = data["Evalid_DES"]
+    dataC.Evalid0_DES = data["Evalid0_DES"]
     dataC.Epred_DES = data["Epred_DES"]
 
     dataC.params = data["params"]
