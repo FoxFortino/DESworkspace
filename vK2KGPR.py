@@ -17,9 +17,10 @@ class vonKarman2KernelGPR(object):
         self.dC = dataContainer
         self.printing = printing
         
-        self.paramFile = os.path.join(outDir, "params.out")
-        if os.path.exists(self.paramFile):
-            os.remove(self.paramFile)
+        if self.printing:
+            self.paramFile = os.path.join(outDir, "params.out")
+            if os.path.exists(self.paramFile):
+                os.remove(self.paramFile)
 
     def fitCorr(self, v0=None, rmax=5*u.arcmin, nBins=50):
 
@@ -51,21 +52,12 @@ class vonKarman2KernelGPR(object):
             
             RSS = np.sum((xiplus - xiplus_model)**2) / self.dC.nTrain
 
-            if self.printing:
-                theta = {
-                    "RSS": RSS,
-                    'var': params[0],
-                    'oS': params[1],
-                    'd': params[2],
-                    'wind_x': params[3],
-                    'wind_y': params[4]
-                }
-                params = ' '.join(
-                    [f"{name:>6}: {x:<10.7f}" for name, x in theta.items()]
-                    )
-                with open(self.paramFile, mode="a+") as file:
-                    file.write(params + "\n")
-                print(params)
+            printParams(
+                params,
+                FoM=RSS,
+                file=self.paramFile,
+                printing=self.printing
+                )
             
             return RSS
 
@@ -74,6 +66,14 @@ class vonKarman2KernelGPR(object):
         simplex0 = np.vstack(
             [v0, np.vstack([v0]*v0.shape[0]) + np.diag(v0*0.15)]
         )
+
+        printParams(
+            v0,
+            header=True,
+            FoMtype="RSS",
+            file=self.paramFile,
+            printing=self.printing
+            )
 
         self.opt_result = opt.fmin(
             figureOfMerit_fitCorr,
@@ -123,8 +123,6 @@ class vonKarman2KernelGPR(object):
         self.dC.fbar_s = GPRutils.unflat(np.dot(Ks.T, self.alpha))
 
     def figureOfMerit(self, params):
-        
-        
         self.fit(params)
         self.predict(self.dC.Xvalid)
 
@@ -132,21 +130,12 @@ class vonKarman2KernelGPR(object):
             self.dC.Xvalid, self.dC.Yvalid - self.dC.fbar_s,
             rMax = 0.02*u.deg, rMin=5*u.mas)
 
-        if self.printing:
-            theta = {
-                "xi_+": xiplus,
-                'var': params[0],
-                'oS': params[1],
-                'd': params[2],
-                'wind_x': params[3],
-                'wind_y': params[4],
-            }
-            params = ' '.join(
-                [f"{name:>6}: {x:<10.7f}" for name, x in theta.items()]
-                )
-            with open(self.paramFile, mode="a+") as file:
-                file.write(params + "\n")
-            print(params)
+        printParams(
+            params,
+            FoM=xiplpus,
+            file=self.paramFile,
+            printing=self.printing
+            )
 
         return xiplus
 
@@ -157,6 +146,14 @@ class vonKarman2KernelGPR(object):
         simplex0 = np.vstack(
             [v0, np.vstack([v0]*v0.shape[0]) + np.diag(v0*0.15)]
         )
+
+        printParams(
+            v0,
+            header=True,
+            FoMtype="xi +",
+            file=self.paramFile,
+            printing=self.printing
+            )
 
         self.opt_result_GP = opt.fmin(
             self.figureOfMerit,
@@ -169,17 +166,32 @@ class vonKarman2KernelGPR(object):
             initial_simplex=simplex0
         )
 
-def printParams(params):
-    """This function prints the kernel parameters in a pleasing way."""
+def printParams(
+    params,
+    header=False,
+    FoM=None,
+    FoMtype=None,
+    file=None,
+    printing=True
+    ):
+
+    if header:
+        names = ["K Variance", "Outer Scale", "Diameter", "Wind X", "Wind Y"]
+        if FoMtype is not None:
+            names.insert(0, FoMtype)
+        if params.size == 6:
+            names.append("W Variance")
+            
+        line = "".join([f"{name:<15}" for name in names])
+        
+    else:
+        if FoM is not None:
+            params = np.insert(params, 0, FoM)
+            
+        line = "".join([f"{np.round(param, 7):<15}" for param in params])
     
-    theta = {
-        'var': params[0],
-        'oS': params[1],
-        'd': params[2],
-        'wind_x': params[3],
-        'wind_y': params[4]
-    }
-    params = ' '.join([f"{name:>8}: {x:<11.8f}" for name, x in theta.items()])
-
-    print(params)
-
+    with open(file, mode="a+") as ffile:
+        f.write(line + "\n")
+        
+    if printing:
+        print(line)
