@@ -14,13 +14,12 @@ import gbutil
 import numpy as np
 import astropy.units as u
 import astropy.constants as c
-import astropy.table as tb
 import astropy.coordinates as co
+import astropy.table as tb
 import astropy.io.fits as fits
 import astropy.stats as stats
 from astropy.time import Time
 from scipy.spatial.ckdtree import cKDTree
-from sklearn.model_selection import train_test_split
 
 from IPython import embed
 
@@ -43,16 +42,26 @@ class dataContainer(object):
 
     def load(
         self,
-        expNum=None,
+        expNum,
         zoneDir="/data3/garyb/tno/y6/zone134",
         tile0="DES2203-4623_final.fits",
         earthRef="/home/fortino/y6a1.exposures.positions.fits.gz",
         tileRef="/home/fortino/expnum_tile.fits.gz",
-        tol=0.5*u.arcsec
+        tol=0.5*u.arcsec,
+        nSigma=4,
+        vSet="Subset A"
         ):
         """
         Docs go here :)
         """
+        self.expNum = expNum
+        self.zoneDir = zoneDir
+        self.tile0 = tile0
+        self.earthRef = earthRef
+        self.tileRef = tileRef
+        self.tol = tol
+        self.nSigma = nSigma
+        self.vSet = vSet
 
         # Load in data from a reference tile (tile0). This tile is arbitrary.
         # At the time of implementation, I do not have access to a reference
@@ -65,9 +74,6 @@ class dataContainer(object):
         # access to).
         file0 = os.path.join(zoneDir, tile0)
         tab0 = tb.Table.read(file0)
-        self.expNum = expNum
-        if self.expNum is None:
-            self.expNum = np.unique(tab0["EXPNUM"])[10]
 
         #--------------------#
 
@@ -83,7 +89,8 @@ class dataContainer(object):
 
         # Use tileRef to find all of the tiles that our exposure is a part of.
         tiles_tab = tb.Table.read(tileRef)
-        tiles = tiles_tab[np.array(tiles_tab["EXPNUM"]) == self.expNum]["TILENAME"]
+        tiles = tiles_tab[np.array(tiles_tab["EXPNUM"]) == self.expNum]
+        tiles = tiles["TILENAME"]
         #--------------------#
 
         # Create an empty astropy table with all of the necessary columns.
@@ -104,14 +111,16 @@ class dataContainer(object):
                 print(f"File not found: {file}, continuing without it")
                 continue
 
+        self.band = np.unique(DES_tab["BAND"])[0]
+
         print(f"Exposure: {self.expNum}")
-        print(f"Band: {np.array(np.unique(DES_tab['BAND']))[0]}")
+        print(f"Band: {self.band}")
         print(f"Number of objects: {len(DES_tab)}")
 
         # Initialize variables for the relevant columns.
         DES_ra = np.array(DES_tab["NEW_RA"])*u.deg
         DES_dec = np.array(DES_tab["NEW_DEC"])*u.deg
-        DES_err = (np.array(DES_tab["ERRAWIN_WORLD"])*u.deg)**2
+        DES_err = ((np.array(DES_tab["ERRAWIN_WORLD"])*u.deg).to(u.mas))**2
 
         #--------------------#
 
@@ -254,300 +263,335 @@ class dataContainer(object):
         # lowly undergraduate).
         self.E_DES = DES_err
 
-    def splitData(self, nSigma=4, train_size=0.80, subSample=1.0):
-        """
-        Split data and error arrows according to train_size and subSample.
+        #--------------------#
 
-        When saving data to npz, the training, validation, and predication
-        sets will not be saved. Instead, the full sets are saved and the
-        numpy random state is saved so that the exact same training
-        validation/prediction splt (also the subSample split, if present)
-        can be made again. In effect, when the npz is loaded back in, the
-        following arrays should be set as attributes in the dataContainer
-        object and the dataContianer.splitData should be called again.
-        
-        The saved arrays, and their shapes, are:
-        self.X (nData, 2)
-        self.Y (nTrain + nValid, 2)
-        self.E_DES (nData, 2)
-        self.E_GAIA (nTrain + nValid, 2)
+        # Load the TV set (training + validation) into an astropy table.
+        x = tb.Column(data=self.X[self.ind_DES][:, 0], name=f"X")
+        y = tb.Column(data=self.X[self.ind_DES][:, 1], name=f"Y")
+        dx = tb.Column(data=self.Y[:, 0].to(u.mas), name=f"dX")
+        dy = tb.Column(data=self.Y[:, 1].to(u.mas), name=f"dY")
+        err_DES = tb.Column(
+            data=self.E_DES[self.ind_DES], name=f"DES variance")
+        err_GAIA = tb.Column(
+            data=self.E_GAIA, name=f"GAIA covariance")
+        self.TV = tb.QTable([x, y, dx, dy, err_DES, err_GAIA])
 
-        These arrays are not used directly. They are only used to create the
-        training, validation, and prediction sets.        
-        """
-        # Sigma clip on the residuals, hopefully removing a few outliers.
-        mask = stats.sigma_clip(self.Y, sigma=nSigma, axis=0).mask
-        mask = ~np.logical_or(*mask.T)
+        #--------------------#
 
-        # Make intermediate `tv` arrays (training/validation). These arrays
-        # will be split into the training and validation sets and are not used
-        # directly. Also apply the sigma clipping mask.
-        # The sigma clipping mask is not applied to the attributes
-        # dataContainer.X, dataContainer.Y, etc., because I want to save the
-        # full array when I save all of this data to an npz file that way I
-        # can just run this method again and recreate the training,
-        # validation, and prediction sets (and sigma clipping won't happen
-        # twice). Having to run this method again when loading in npz data is
-        # not a bad thing because it means I don't have to save those arrays
-        # in the npz file.
-        X_tv = self.X[self.ind_DES][mask]
-        Y_tv = self.Y[mask]
-        E_tv_GAIA = self.E_GAIA[mask]
-        E_tv_DES = self.E_DES[self.ind_DES][mask]
-        
+        # Sigma clip on the TV residuals. This usually removes about 100
+        # objects.
+        Y = np.vstack([self.TV["dX"], self.TV["dY"]]).T.value
+        mask = stats.sigma_clip(Y, sigma=nSigma, axis=0).mask
+        mask = tb.Column(
+            data=~np.logical_or(*mask.T),
+            name="Mask0",
+            description="False if excluded in initial sigma clipping.")
+        self.TV.add_column(mask)
+
+        #--------------------#
+
+        # Define some placeholder arrays for removing a polynomial fit.
+        x = self.TV["X"][self.TV["Mask0"]]
+        y = self.TV["Y"][self.TV["Mask0"]]
+        dx = self.TV["dX"][self.TV["Mask0"]]
+        dy = self.TV["dY"][self.TV["Mask0"]]
+
         # Remove a 3rd order polynomial fit from the residuals.
         poly = Poly2d(3)
-        poly.fit(X_tv[:, 0].value, X_tv[:, 1].value, Y_tv[:, 0].value)
-        Y_tv[:, 0] -= poly.evaluate(X_tv[:, 0].value, X_tv[:, 1].value)*u.deg
-        poly.fit(X_tv[:, 0].value, X_tv[:, 1].value, Y_tv[:, 1].value)
-        Y_tv[:, 1] -= poly.evaluate(X_tv[:, 0].value, X_tv[:, 1].value)*u.deg
+        poly.fit(x, y, dx)
+        self.TV["dX"][mask] -= poly.evaluate(x, y)*self.TV["dX"].unit
+        poly.fit(x, y, dy)
+        self.TV["dY"][mask] -= poly.evaluate(x, y)*self.TV["dY"].unit
 
-        # Generate an array of numbers from 0 to nTV-1.
-        nTV = X_tv.shape[0]
-        tv_mask = np.arange(nTV)
+        #--------------------#
 
-        # Shuffle these numbers. Now I can take the first X% of these and have
-        # a random slice of the data. If I were to simply  take the first X%
-        # of the data arrays I would not have a random subset because the
-        # arrays are ordered.
+        # Make an index array for the entire TV set.
+        nTV = len(self.TV)
+        tv_ind = np.arange(nTV)
+
+        # Shuffle the index array.
         rng = np.random.RandomState(self.randomState)
-        rng.shuffle(tv_mask)
+        rng.shuffle(tv_ind)
 
-        # Figure out the number of data points that should be included based
-        # on subSample
-        nSubSample = int(np.ceil(nTV*subSample))
+        # Split the index array into 5 approximately equal arrays.
+        index_arrays = np.array_split(tv_ind, 5)
 
-        # Take only the first nSubSample data points from the mask. Now I can
-        # take the first X% of these and have a random slice of (subSample)%
-        # of the full dataset.
-        tv_mask = tv_mask[:nSubSample]
+        # Create a boolean placeholder array. This is used to turn the index
+        # arrays into boolean masks of length nTV.
+        self.arr = np.zeros_like(tv_ind).astype(bool)
 
-        # Redefine nTV based on subSample because nTrain and nValid are
-        # calculated from it.
-        nTV = int(np.ceil(nTV*subSample))
-        nTrain = int(np.floor(nTV*train_size))
-        nValid = nTV - nTrain
+        # The names of the subsets.
+        letters = ["A", "B", "C", "D", "E"]
 
-        # Get the training set and validation set slices. When used to index
-        # the data arrays, these will retrieve random subsets of the data.
-        train_mask = tv_mask[:nTrain]
-        valid_mask = tv_mask[nTrain:]
+        # Create the boolean submasks.
+        for letter, index_arr in zip(letters, index_arrays):
+            mask = tb.Column(data=self.arr.copy(), name=f"Subset {letter}")
+            mask[index_arr] = True
+            mask = np.logical_and(mask, self.TV["Mask0"])
+            self.TV.add_column(mask)
 
-        # Get the training and validation sets from the slices.
-        Xtrain, Xvalid = X_tv[train_mask, :], X_tv[valid_mask, :]
-        Ytrain, Yvalid = Y_tv[train_mask, :], Y_tv[valid_mask, :]
-        Etrain_GAIA = E_tv_GAIA[train_mask, ...]
-        Evalid_GAIA = E_tv_GAIA[valid_mask, ...]
-        Etrain_DES = E_tv_DES[train_mask]
-        Evalid_DES = E_tv_DES[valid_mask]
+        #--------------------#
 
-        # From the datasets (length nData) for X (astrometric position) and
-        # E_DES (measurement error), remove the elements that have a Gaia
-        # counterpart (these are already accounted for in the training
-        # validation sets).
+        # Create the prediction dataset table that represents all DES objects
+        # that don't have a Gaia counterpart.
         Xpred = np.delete(self.X, self.ind_DES, axis=0)
         Epred = np.delete(self.E_DES, self.ind_DES, axis=0)
 
-        # Declare these values as attributes because these are important to
-        # have when reconstructing the training/validation sets when loading
-        # in this data from npz.
-        self.train_size = train_size
-        self.subSample = subSample
-        self.nSigma = nSigma
+        x = tb.Column(data=Xpred[:, 0], name="X")
+        y = tb.Column(data=Xpred[:, 1], name="Y")
+        e = tb.Column(data=Epred, name="DES variance")
 
-        # The following blocks of code get each of the relevant arrays, put
-        # them in the right units, and then removes the units from the array
-        # so they are easier to work with.
-        self.X = self.X.to(u.deg).value
-        self.Xtrain = Xtrain.to(u.deg).value
-        self.Xvalid = Xvalid.to(u.deg).value
-        self.Xpred = Xpred.to(u.deg).value
-        
-        self.Y = self.Y.to(u.mas).value
-        self.Ytrain = Ytrain.to(u.mas).value
-        self.Yvalid = Yvalid.to(u.mas).value
-        
-        self.E_GAIA = self.E_GAIA.to(u.mas**2).value
-        self.Etrain_GAIA = Etrain_GAIA.to(u.mas**2).value
-        self.Evalid_GAIA = Evalid_GAIA.to(u.mas**2).value
+        self.Pred = tb.QTable([x, y, e])
 
-        self.E_DES = self.E_DES.to(u.mas**2).value
-        self.Etrain_DES = Etrain_DES.to(u.mas**2).value
-        self.Evalid_DES = Evalid_DES.to(u.mas**2).value
-        self.Epred_DES = Epred.to(u.mas**2).value
+        #--------------------#
+
+        # Make the training and validation sets into attributes of this object
+        # like how vK2KGPR.py expects it.
+        Train, Valid = makeSplit(self.TV, self.vSet)
+        self.makeArrays(Train, Valid)
+
+        #--------------------#
+
+        fbar_s_x = tb.Column(
+            data=self.arr.copy(),
+            name=f"fbar_s dX",
+            dtype=float, unit=u.mas,
+            description="posterior predictive mean (dx)")
+        fbar_s_y = tb.Column(
+            data=self.arr.copy(),
+            name=f"fbar_s dY",
+            dtype=float, unit=u.mas,
+            description="posterior predictive mean (dy)")
+        self.TV.add_columns([fbar_s_x, fbar_s_y])
         
-        self.nTrain = self.Xtrain.shape[0]
-        self.nValid = self.Xvalid.shape[0]
-        self.nPred = self.Xpred.shape[0]
-        self.nData = self.nTrain + self.nValid + self.nPred
-        # note that self.X.shape[0] will be different from self.nData because
-        # of the mask that isn't applied to self.X but is applied to the other
-        # arrays.
+        #--------------------#
         
-        print(f"{self.nData} total detections")
-        print(f"{self.nTrain} training set detections")
-        print(f"{self.nValid} validation set detections")
-        print(f"{self.nPred} prediction set detections")
+        self.nData = len(self.TV) + len(self.Pred)
+        self.nPred = len(self.Pred)
+        self.nTrain = len(Train)
+        self.nValid = len(Valid)
+
+    def makeArrays(self, Train, Valid):
+        xt = Train["X"].to(u.deg).value
+        yt = Train["Y"].to(u.deg).value
+        dxt = Train["dX"].to(u.mas).value
+        dyt = Train["dY"].to(u.mas).value
+        self.Xtrain = np.vstack([xt, yt]).T
+        self.Ytrain = np.vstack([dxt, dyt]).T
+        self.Etrain_GAIA = Train["GAIA covariance"].to(u.mas**2).value
+        self.Etrain_DES = Train["DES variance"].to(u.mas**2).value
+
+        xv = Valid["X"].to(u.deg).value
+        yv = Valid["Y"].to(u.deg).value
+        dxv = Valid["dX"].to(u.mas).value
+        dyv = Valid["dY"].to(u.mas).value
+        self.Xvalid = np.vstack([xv, yv]).T
+        self.Yvalid = np.vstack([dxv, dyv]).T
+        self.Evalid_GAIA = Valid["GAIA covariance"].to(u.mas**2).value
+        self.Evalid_DES = Valid["DES variance"].to(u.mas**2).value
+
+    def postFitCorr_sigmaClip(self, GP):
+
+        subsets = ["Subset A", "Subset B", "Subset C", "Subset D", "Subset E"]
+        subsets.remove(self.vSet)
+        train_mask = self.TV[subsets[0]] + \
+                     self.TV[subsets[1]] + \
+                     self.TV[subsets[2]] + \
+                     self.TV[subsets[3]]
+        valid_mask = self.TV[self.vSet]
+
+        maskX = tb.Column(
+            data=self.arr.copy(),
+            name=f"MaskCorrFit")
+        self.TV.add_column(maskX)
         
-    def makeMasks(self, GP):
-        
+        # Sigma clip on the validation set.
         GP.predict(self.Xvalid)
         mask = stats.sigma_clip(
             self.Yvalid - self.fbar_s,
-            sigma=4, axis=0).mask
+            sigma=self.nSigma, axis=0).mask
         mask = ~np.logical_or(*mask.T)
-        self.Xvalid0 = self.Xvalid
-        self.Yvalid0 = self.Yvalid
-        self.Evalid0_DES = self.Evalid_DES
-        self.Evalid0_GAIA = self.Evalid_GAIA
-        self.fbar_s_valid = self.fbar_s
+        self.TV["MaskCorrFit"][valid_mask] = mask
 
-        self.Xvalid = self.Xvalid[mask]
-        self.Yvalid = self.Yvalid[mask]
-        self.Evalid_DES = self.Evalid_DES[mask]
-        self.Evalid_GAIA = self.Evalid_GAIA[mask]
-
-        GP.predict(self.Xtrain)
+        # Sigma clip on the training set.
+        GP. predict(self.Xtrain)
         mask = stats.sigma_clip(
             self.Ytrain - self.fbar_s,
-            sigma=4, axis=0).mask
+            sigma=self.nSigma, axis=0).mask
         mask = ~np.logical_or(*mask.T)
-        self.Xtrain0 = self.Xtrain
-        self.Ytrain0 = self.Ytrain
-        self.Etrain0_DES = self.Etrain_DES
-        self.Etrain0_GAIA = self.Etrain_GAIA
-        self.fbar_s_train = self.fbar_s
-    
-        self.Xtrain = self.Xtrain[mask]
-        self.Ytrain = self.Ytrain[mask]
-        self.Etrain_DES = self.Etrain_DES[mask]
-        self.Etrain_GAIA = self.Etrain_GAIA[mask]
-
-    def saveNPZ(self, savePath):
-
-        np.savez(
-            os.path.join(savePath, f"{self.expNum}.npz"),
-            expNum=self.expNum,
-            randomState=self.randomState,
-            ind_GAIA=self.ind_GAIA, ind_DES=self.ind_DES,
-            nSigma=self.nSigma,
-            train_size=self.train_size,
-            subSample=self.subSample,
-            X=self.X,
-            Xtrain=self.Xtrain, Xtrain0=self.Xtrain0,
-            Xvalid=self.Xvalid, Xvalid0=self.Xvalid0,
-            Xpred=self.Xpred,
-            Y=self.Y,
-            Ytrain=self.Ytrain, Ytrain0=self.Ytrain0,
-            Yvalid=self.Yvalid, Yvalid0=self.Yvalid0,
-            E_GAIA=self.E_GAIA,
-            Etrain_GAIA=self.Etrain_GAIA, Etrain0_GAIA=self.Etrain0_GAIA,
-            Evalid_GAIA=self.Evalid_GAIA, Evalid0_GAIA=self.Evalid0_GAIA,
-            E_DES=self.E_DES,
-            Etrain_DES=self.Etrain_DES, Etrain0_DES=self.Etrain0_DES,
-            Evalid_DES=self.Evalid_DES, Evalid0_DES=self.Evalid0_DES,
-            Epred_DES=self.Epred_DES,
-            params=self.params,
-            fbar_s=self.fbar_s,
-            fbar_s_train=self.fbar_s_train, fbar_s_valid=self.fbar_s_valid
-            )
-
-    def quickPlot(self, plotShow=True, savePath=None, sigmaClip=None):
-
-        x, y = self.Xvalid.T*u.deg
-        dx, dy = self.Yvalid.T*u.mas
-        err = np.sqrt(self.Evalid_DES)*u.mas
-
-        x2, y2 = x, y
-        dx2, dy2 = self.Yvalid.T*u.mas - self.fbar_s.T*u.mas
-        err2 = err
+        self.TV["MaskCorrFit"][train_mask] = mask
         
-        if sigmaClip is not None:
-            mask = stats.sigma_clip(
-                np.vstack([dx2.value, dy2.value]).T,
-                sigma=sigmaClip, axis=0).mask
+        Train, Valid = makeSplit(self.TV[self.TV["MaskCorrFit"]], self.vSet)
+        self.makeArrays(Train, Valid)
+        
+    def JackKnife(self, GP):
+        
+        maskjk = tb.Column(data=self.arr.copy(), name=f"MaskJackKnife")
+        self.TV.add_column(maskjk)
+        
+        subsets = ["Subset A", "Subset B", "Subset C", "Subset D", "Subset E"]
+        for i in range(5):
+            Train, Valid = makeSplit(self.TV[self.TV["MaskCorrFit"]], subsets[i])
+            self.makeArrays(Train, Valid)
+            
+            GP.fit(self.params)
+            GP.predict(self.Xvalid)
+            index = np.logical_and(self.TV[subsets[i]], self.TV["MaskCorrFit"])
+            self.TV["fbar_s dX"][index] = self.fbar_s[:, 0]*u.mas
+            self.TV["fbar_s dY"][index] = self.fbar_s[:, 1]*u.mas
+    
+            mask = stats.sigma_clip(self.fbar_s, sigma=self.nSigma, axis=0).mask
             mask = ~np.logical_or(*mask.T)
+            self.TV["MaskJackKnife"][index] = mask
+            
+        maskf = self.TV["Subset A"] + self.TV["Subset B"] + self.TV["Subset C"] + self.TV["Subset D"] + self.TV["Subset E"]
+        maskf = np.logical_and(maskf, np.logical_and(self.TV["MaskJackKnife"], self.TV["MaskCorrFit"]))
+        maskf = tb.Column(data=maskf, name="Maskf")
+        self.TV.add_column(maskf)
+        
+    def JackKnifeXi(self, allPairs=False):
+        if allPairs:
+            x = self.TV["X"][self.TV["Maskf"]]
+            y = self.TV["Y"][self.TV["Maskf"]]
+            dx = self.TV["dX"][self.TV["Maskf"]]
+            dy = self.TV["dY"][self.TV["Maskf"]]
+            dx2 = dx - self.TV["fbar_s dX"][self.TV["Maskf"]]
+            dy2 = dy - self.TV["fbar_s dY"][self.TV["Maskf"]]
+            
+            xi = getXi(np.vstack([x, y]).T, np.vstack([dx, dy]).T)
+            xi2 = getXi(np.vstack([x, y]).T, np.vstack([dx2, dy2]).T)
+            return xi, xi2
+        
+        elif allPairs == False:
+            prs_list = []
+            prs_list2 = []
+            subsets = ["Subset A", "Subset B", "Subset C", "Subset D", "Subset E"]
+            for subset in subsets:
+                data = self.TV[self.TV[subset] & self.TV["Maskf"]]
+                X = np.vstack([data["X"], data["Y"]]).T
+                Y = np.vstack([data["dX"], data["dY"]]).T
+                Y2 = Y - np.vstack([data["fbar_s dX"], data["fbar_s dY"]]).T
 
-            x = x[mask]
-            y = y[mask]
-            dx = dx[mask]
-            dy = dy[mask]
-            err = err[mask]
+                xi, Uerr, Verr, prs = getXi(X, Y)
+                xi2, Uerr2, Verr2, prs2 = getXi(X, Y2)
 
-            x2 = x2[mask]
-            y2 = y2[mask]
-            dx2 = dx2[mask]
-            dy2 = dy2[mask]
-            err2 = err2[mask]
+                prs_list.append(Y[prs])
+                prs_list2.append(Y2[prs2])
 
-        plotGPR.AstrometricResiduals(
-            x, y, dx, dy, err,
-            x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
-            savePath=savePath,
-            plotShow=plotShow,
-            exposure=self.expNum,
-            scale=200*u.mas,
-            arrowScale=10*u.mas)
+            prs = np.vstack(prs_list)
+            prs2 = np.vstack(prs_list2)
 
-        plotGPR.DivCurl(
-            x, y, dx, dy, err,
-            x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
-            savePath=savePath,
-            plotShow=plotShow,
-            exposure=self.expNum,
-            pixelsPerBin=1500)
+            X = np.vstack([self.TV["X"], self.TV["Y"]]).T
+            Y = np.vstack([self.TV["dX"], self.TV["dY"]]).T
+            Y2 = Y - np.vstack([self.TV["fbar_s dX"], self.TV["fbar_s dY"]]).T
 
-        plotGPR.Correlation(
-            x, y, dx, dy,
-            x2=x2, y2=y2, dx2=dx2, dy2=dy2,
-            savePath=savePath,
-            plotShow=plotShow,
-            exposure=self.expNum,
-            ylim=(-20, 75))
+            xiplus = np.mean(np.sum(prs[:, 0] * prs[:, 1], axis=1))
+            xiplus2 = np.mean(np.sum(prs2[:, 0] * prs2[:, 1], axis=1))
 
-        plotGPR.Correlation2D(
-            x, y, dx, dy,
-            x2=x2, y2=y2, dx2=dx2, dy2=dy2,
-            savePath=savePath,
-            plotShow=plotShow,
-            exposure=self.expNum,
-            nBins=50,
-            vmin=0*u.mas**2,
-            vmax=40*u.mas**2,
-            rmax=0.50*u.deg)
+            err = np.std(prs[:, 0] * prs[:, 1], axis=0) / np.sqrt(prs.shape[0])
+            err2 = np.std(prs2[:, 0] * prs2[:, 1], axis=0) / np.sqrt(prs2.shape[0])
+            
+            xi = (xiplus, err[0], err[1])
+            xi2 = (xiplus2, err2[0], err2[1])
 
-def getXi(X, Y, rMax=0.02*u.deg, rMin=5*u.mas):
-        res = Y
-        kdt = cKDTree(X)
+            return xi, xi2
 
-        rMax = rMax.to(u.deg).value
-        rMin = rMin.to(u.deg).value
+    def saveFITS(self, savePath, overwrite=True):
+        hdr = fits.Header()
+        hdr["expNum"] = self.expNum
+        hdr["band"] = self.band
+        hdr["zoneDir"] = self.zoneDir
+        hdr["tile0"] = self.tile0
+        hdr["earthRef"] = self.earthRef
+        hdr["tileRef"] = self.tileRef
+        hdr["tol"] = self.tol.value
+        hdr["nSigma"] = self.nSigma
+        hdr["vSet"] = self.vSet
+        hdr["randomState"] = self.randomState
+        
+        xi, xi2 = self.JackKnifeXi(allPairs=True)
+        hdr["allPairs_xi0"] = xi[0].value
+        hdr["allPairs_xi0_Xerr"] = xi[1].value
+        hdr["allPairs_xi0_Yerr"] = xi[2].value
+        hdr["allPairs_xif"] = xi2[0].value
+        hdr["allPairs_xif_Xerr"] = xi2[1].value
+        hdr["allPairs_xif_Yerr"] = xi2[2].value
+        
+        xi, xi2 = self.JackKnifeXi(allPairs=False)
+        hdr["xi0"] = xi[0].value
+        hdr["xi0_Xerr"] = xi[1].value
+        hdr["xi0_Yerr"] = xi[2].value
+        hdr["xif"] = xi2[0].value
+        hdr["xif_Xerr"] = xi2[1].value
+        hdr["xif_Yerr"] = xi2[2].value
+        
+        hdr["var"] = self.params[0]
+        hdr["outerScale"] = self.params[1]
+        hdr["diameter"] = self.params[2]
+        hdr["wind_x"] = self.params[3]
+        hdr["wind_y"] = self.params[4]
+        
+        hdr["fcvar"] = self.fitCorrParams[0]
+        hdr["fcouterScale"] = self.fitCorrParams[1]
+        hdr["fcdiameter"] = self.fitCorrParams[2]
+        hdr["fcwind_x"] = self.fitCorrParams[3]
+        hdr["fcwind_y"] = self.fitCorrParams[4]
+        
+        prim_HDU = fits.PrimaryHDU(header=hdr)
+        TV_HDU = fits.BinTableHDU(data=self.TV)
+        Pred_HDU = fits.BinTableHDU(data=self.Pred)
 
-        prs_set = kdt.query_pairs(rMax, output_type='set')
-        prs_set -= kdt.query_pairs(rMin, output_type='set')
-        prs = np.array(list(prs_set))
+        hdul = fits.HDUList([prim_HDU, TV_HDU, Pred_HDU])
+        hdul.writeto(
+            os.path.join(savePath, f"DES{self.expNum}_{self.band}.fits"),
+            overwrite=overwrite)
 
-        xiplus = np.mean(np.sum(res[prs[:, 0]] * res[prs[:, 1]], axis=1))
+def loadFITS(FITSfile):
+    hdul = fits.open(FITSfile)
 
-        err = np.std(res[prs[:, 0]] * res[prs[:, 1]], axis=0) / np.sqrt(prs.shape[0])
-        Uerr, Verr = err
+    dataC = dataContainer()
+    dataC.header = hdul[0].header
+    dataC.expNum = hdul[0].header["expNum"]
+    dataC.band = hdul[0].header["band"]
+    dataC.zoneDir = hdul[0].header["zoneDir"]
+    dataC.tile0 = hdul[0].header["tile0"]
+    dataC.earthRef = hdul[0].header["earthRef"]
+    dataC.tileRef = hdul[0].header["tileRef"]
+    dataC.tol = hdul[0].header["tol"]*u.arcsec
+    dataC.nSigma = hdul[0].header["nSigma"]
+    dataC.vSet = hdul[0].header["vSet"]
+    dataC.randomState = hdul[0].header["randomState"]
+    
+    dataC.params = np.zeros(5)
+    dataC.params[0] = hdul[0].header["var"]
+    dataC.params[1] = hdul[0].header["outerScale"]
+    dataC.params[2] = hdul[0].header["diameter"]
+    dataC.params[3] = hdul[0].header["wind_x"]
+    dataC.params[4] = hdul[0].header["wind_y"]
+    
+    dataC.fitCorrParams = np.zeros(5)
+    dataC.fitCorrParams[0] = hdul[0].header["fcvar"]
+    dataC.fitCorrParams[1] = hdul[0].header["fcouterScale"]
+    dataC.fitCorrParams[2] = hdul[0].header["fcdiameter"]
+    dataC.fitCorrParams[3] = hdul[0].header["fcwind_x"]
+    dataC.fitCorrParams[4] = hdul[0].header["fcwind_y"]
 
-        return xiplus, Uerr, Verr
+    dataC.TV = tb.QTable(hdul[1].data)
+    dataC.TV["X"].unit = u.deg
+    dataC.TV["Y"].unit = u.deg
+    dataC.TV["dX"].unit = u.mas
+    dataC.TV["dY"].unit = u.mas
+    dataC.TV["DES variance"].unit = u.mas**2
+    dataC.TV["GAIA covariance"].unit = u.mas**2
+    dataC.TV["fbar_s dX"].unit = u.mas
+    dataC.TV["fbar_s dY"].unit = u.mas
 
-def makeW(E_GAIA, E_DES):
-
-    N = E_GAIA.shape[0]
-    out = np.zeros((N, N, 2, 2))
-    out[:, :, 0, 0] = np.diag(E_GAIA[:, 0, 0])
-    out[:, :, 1, 1] = np.diag(E_GAIA[:, 1, 1])
-    out[:, :, 1, 0] = np.diag(E_GAIA[:, 1, 0])
-    out[:, :, 0, 1] = np.diag(E_GAIA[:, 0, 1])
-    W_GAIA = np.swapaxes(out, 1, 2).reshape((2*N, 2*N))
-
-    E_DES = np.vstack([E_DES, E_DES]).T
-    W_DES = np.diag(flat(E_DES))
-
-    return W_GAIA + W_DES
+    dataC.Pred = tb.QTable(hdul[2].data)
+    dataC.Pred["X"].unit = u.deg
+    dataC.Pred["Y"].unit = u.deg
+    dataC.Pred["DES variance"].unit = u.mas**2
+    
+    return dataC
 
 def loadNPZ(file):
     
@@ -598,6 +642,53 @@ def loadNPZ(file):
     dataC.fbar_s_valid = data["fbar_s_valid"]
     
     return dataC
+        
+def makeSplit(TV, vSet):
+    subsets = ["Subset A", "Subset B", "Subset C", "Subset D", "Subset E"]
+    subsets.remove(vSet)
+    
+    train_mask = TV[subsets[0]] + \
+                 TV[subsets[1]] + \
+                 TV[subsets[2]] + \
+                 TV[subsets[3]]
+    valid_mask = TV[vSet]
+    
+    Train = TV[train_mask]
+    Valid = TV[valid_mask]
+    
+    return Train, Valid
+
+def getXi(X, Y, rMax=0.02*u.deg, rMin=5*u.mas):
+    res = Y
+    kdt = cKDTree(X)
+
+    rMax = rMax.to(u.deg).value
+    rMin = rMin.to(u.deg).value
+
+    prs_set = kdt.query_pairs(rMax, output_type='set')
+    prs_set -= kdt.query_pairs(rMin, output_type='set')
+    prs = np.array(list(prs_set))
+    xiplus = np.mean(np.sum(res[prs[:, 0]] * res[prs[:, 1]], axis=1))
+
+    err = np.std(res[prs[:, 0]] * res[prs[:, 1]], axis=0) / np.sqrt(prs.shape[0])
+    Uerr, Verr = err
+
+    return xiplus, Uerr, Verr, prs
+
+def makeW(E_GAIA, E_DES):
+
+    N = E_GAIA.shape[0]
+    out = np.zeros((N, N, 2, 2))
+    out[:, :, 0, 0] = np.diag(E_GAIA[:, 0, 0])
+    out[:, :, 1, 1] = np.diag(E_GAIA[:, 1, 1])
+    out[:, :, 1, 0] = np.diag(E_GAIA[:, 1, 0])
+    out[:, :, 0, 1] = np.diag(E_GAIA[:, 0, 1])
+    W_GAIA = np.swapaxes(out, 1, 2).reshape((2*N, 2*N))
+
+    E_DES = np.vstack([E_DES, E_DES]).T
+    W_DES = np.diag(flat(E_DES))
+
+    return W_GAIA + W_DES
 
 def getGrid(X1, X2):
     u1, u2 = X1[:, 0], X2[:, 0]

@@ -49,7 +49,7 @@ class vonKarman2KernelGPR(object):
             xiplus_model = Cuv[:, :, 0, 0] + Cuv[:, :, 1, 1]
             xiplus_model = np.where(np.isnan(xiplus_model), 0, xiplus_model)
             
-            RSS = np.sum((xiplus - xiplus_model)**2) / self.dC.nData
+            RSS = np.sum((xiplus - xiplus_model)**2) / self.dC.nTrain
 
             if self.printing:
                 theta = {
@@ -85,6 +85,7 @@ class vonKarman2KernelGPR(object):
             retall=True,
             initial_simplex=simplex0
         )
+        self.dC.fitCorrParams = self.opt_result[0]
 
     def fit(self, params):
         
