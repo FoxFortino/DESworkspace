@@ -1,10 +1,12 @@
 # Standard modules
 import os
 import shutil
+import time
 
 # Willow Fox Fortino's modules
 import vK2KGPR
 import plotGPR
+import vonkarmanFT as vk
 
 # Professor Gary Bernstein's modules
 import getGaiaDR2 as gaia
@@ -39,6 +41,121 @@ class dataContainer(object):
         """
 
         self.randomState = randomState
+        
+    def summarize(self):
+        print(f"Exposure: {self.expNum}")
+        print(f"Band: {self.band}")
+        
+        x = self.TV["X"][self.TV["Mask0"]]
+        y = self.TV["Y"][self.TV["Mask0"]]
+        dx = self.TV["dX"][self.TV["Mask0"]]
+        dy = self.TV["dY"][self.TV["Mask0"]]
+        X = np.vstack([x, y]).T
+        Y = np.vstack([dx, dy]).T
+        xi0, Xerr, Yerr, pairs = getXi(X, Y)
+        print("Angle Averaged 2pt Correlation Function of Residual Field")
+        print("--All pairs with separations less than 0.02 degrees included in calculation.")
+        print("--All stars included according to maxDESErr and minDESErr")
+        print("    keyword arguments, as well as all stars that make it through")
+        print("    the first round of sigma clipping in the load method.")
+        print(f"xi = {np.round(xi0, 3)} ± {np.round(np.sqrt(Xerr**2 + Yerr**2), 3)} mas^2")
+        print()
+        
+        try:
+            print("Kernel Parameters from 2d Correlation Fitting")
+            vK2KGPR.printParams(
+                self.fitCorrParams,
+                header=True,
+                printing=True
+                )
+            vK2KGPR.printParams(
+                self.fitCorrParams,
+                printing=True
+                )
+            print()
+
+            print("Kernel Parameters from GPR Optimization")
+            vK2KGPR.printParams(
+                self.params,
+                header=True,
+                printing=True
+                )
+            vK2KGPR.printParams(
+                self.params,
+                printing=True
+                )
+            print()
+
+            print("Jackknifed xi+ (Inter-set pairs excluded)")
+            xi0 = self.header["xi0"]
+            Xerr = self.header["xi0_Xerr"]
+            Yerr = self.header["xi0_Yerr"]
+            print(f"xi0: {np.round(xi0, 3)} ± {np.round(np.sqrt(Xerr**2 + Yerr**2), 3)} mas^2")
+            xif = self.header["xif"]
+            Xerr = self.header["xif_Xerr"]
+            Yerr = self.header["xif_Yerr"]
+            print(f"xif: {np.round(xif, 3)} ± {np.round(np.sqrt(Xerr**2 + Yerr**2), 3)} mas^2")
+            print(f"Reduction: {np.round(xi0/xif, 3)}")
+            print()
+            
+            ttt = vk.TurbulentLayer(
+                variance=self.fitCorrParams[0],
+                outerScale=self.fitCorrParams[1],
+                diameter=self.fitCorrParams[2],
+                wind=(self.fitCorrParams[3], self.fitCorrParams[4]))
+            vk.plotCuv(ttt)
+
+            ttt = vk.TurbulentLayer(
+                variance=self.params[0],
+                outerScale=self.params[1],
+                diameter=self.params[2],
+                wind=(self.params[3], self.params[4]))
+            vk.plotCuv(ttt)
+            
+            x = self.TV["X"][self.TV["Maskf"]]
+            y = self.TV["Y"][self.TV["Maskf"]]
+            dx = self.TV["dX"][self.TV["Maskf"]]
+            dy = self.TV["dY"][self.TV["Maskf"]]
+            err = np.sqrt(self.TV["DES variance"][self.TV["Maskf"]])
+
+            x2 = x
+            y2 = y
+            dx2 = dx - self.TV["fbar_s dX"][self.TV["Maskf"]]
+            dy2 = dy - self.TV["fbar_s dY"][self.TV["Maskf"]]
+            err2 = err
+
+            plotGPR.AstrometricResiduals(
+                x, y, dx, dy, err,
+                x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
+                exposure=self.expNum,
+                pixelsPerBin=450,
+                scale=200*u.mas,
+                arrowScale=10*u.mas)
+
+            plotGPR.DivCurl(
+                x, y, dx, dy, err,
+                x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
+                exposure=self.expNum,
+                pixelsPerBin=750,
+                scale=50)
+
+            plotGPR.Correlation(
+                x, y, dx, dy,
+                x2=x2, y2=y2, dx2=dx2, dy2=dy2,
+                exposure=self.expNum,
+                ylim=(None, None))
+
+            plotGPR.Correlation2D(
+                x, y, dx, dy,
+                x2=x2, y2=y2, dx2=dx2, dy2=dy2,
+                exposure=self.expNum,
+                nBins=100,
+                vmin=-100*u.mas**2,
+                vmax=100*u.mas**2,
+                rmax=0.50*u.deg)
+
+        except:
+            pass
 
     def load(
         self,
@@ -49,7 +166,9 @@ class dataContainer(object):
         tileRef="/home/fortino/expnum_tile.fits.gz",
         tol=0.5*u.arcsec,
         nSigma=4,
-        vSet="Subset A"
+        vSet="Subset A",
+        maxDESErr=np.inf*u.mas**2,
+        minDESErr=-np.inf*u.mas**2
         ):
         """
         Docs go here :)
@@ -287,7 +406,15 @@ class dataContainer(object):
             name="Mask0",
             description="False if excluded in initial sigma clipping.")
         self.TV.add_column(mask)
-
+        
+        #--------------------#
+        
+        # Remove stars that have less variance than minDESErr and stars
+        # that have more variance than maxDESErr. Fold this into Mask0.
+        minMask = self.TV["DES variance"] > minDESErr
+        maxMask = self.TV["DES variance"] < maxDESErr
+        self.TV["Mask0"] = self.TV["Mask0"] & minMask & maxMask
+        
         #--------------------#
 
         # Define some placeholder arrays for removing a polynomial fit.
@@ -299,9 +426,9 @@ class dataContainer(object):
         # Remove a 3rd order polynomial fit from the residuals.
         poly = Poly2d(3)
         poly.fit(x, y, dx)
-        self.TV["dX"][mask] -= poly.evaluate(x, y)*self.TV["dX"].unit
+        self.TV["dX"][self.TV["Mask0"]] -= poly.evaluate(x, y)*self.TV["dX"].unit
         poly.fit(x, y, dy)
-        self.TV["dY"][mask] -= poly.evaluate(x, y)*self.TV["dY"].unit
+        self.TV["dY"][self.TV["Mask0"]] -= poly.evaluate(x, y)*self.TV["dY"].unit
 
         #--------------------#
 

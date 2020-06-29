@@ -8,7 +8,7 @@ import astropy.units as u
 import scipy.optimize as opt
 from scipy.spatial.ckdtree import cKDTree
 
-
+from IPython import embed
 
 class vonKarman2KernelGPR(object):
 
@@ -126,13 +126,13 @@ class vonKarman2KernelGPR(object):
         self.fit(params)
         self.predict(self.dC.Xvalid)
 
-        xiplus, Uerr, Verr = GPRutils.getXi(
+        xiplus, Uerr, Verr, pairs = GPRutils.getXi(
             self.dC.Xvalid, self.dC.Yvalid - self.dC.fbar_s,
             rMax = 0.02*u.deg, rMin=5*u.mas)
 
         printParams(
             params,
-            FoM=xiplpus,
+            FoM=xiplus,
             file=self.paramFile,
             printing=self.printing
             )
@@ -189,9 +189,10 @@ def printParams(
             params = np.insert(params, 0, FoM)
             
         line = "".join([f"{np.round(param, 7):<15}" for param in params])
-    
-    with open(file, mode="a+") as ffile:
-        f.write(line + "\n")
+        
+    if file is not None:
+        with open(file, mode="a+") as f:
+            f.write(line + "\n")
         
     if printing:
         print(line)
