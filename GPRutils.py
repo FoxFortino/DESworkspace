@@ -116,7 +116,11 @@ class dataContainer(object):
             y = self.TV["Y"][self.TV["Maskf"]]
             dx = self.TV["dX"][self.TV["Maskf"]]
             dy = self.TV["dY"][self.TV["Maskf"]]
-            err = np.sqrt(self.TV["DES variance"][self.TV["Maskf"]])
+            
+            if self.TV["DES variance"].ndim == 3:
+                err = np.sqrt(self.TV[self.TV["Maskf"]]["DES variance"][:, 0, 1])
+            else:
+                err = np.sqrt(self.TV["DES variance"][self.TV["Maskf"]])
 
             x2 = x
             y2 = y
@@ -154,8 +158,8 @@ class dataContainer(object):
                 vmax=100*u.mas**2,
                 rmax=0.50*u.deg)
 
-        except:
-            pass
+        except Exception as E:
+            print(E)
 
     def load(
         self,
@@ -168,7 +172,10 @@ class dataContainer(object):
         nSigma=4,
         vSet="Subset A",
         maxDESErr=np.inf*u.mas**2,
-        minDESErr=-np.inf*u.mas**2
+        minDESErr=-np.inf*u.mas**2,
+        downselect=1.0,
+        useRMS=False,
+        useCov=False
         ):
         """
         Docs go here :)
@@ -416,6 +423,55 @@ class dataContainer(object):
         self.TV["Mask0"] = self.TV["Mask0"] & minMask & maxMask
         
         #--------------------#
+        
+        if useRMS:
+            x = self.TV[self.TV["Mask0"]]["X"].value
+            y = self.TV[self.TV["Mask0"]]["Y"].value
+            dx = self.TV[self.TV["Mask0"]]["dX"].value
+            dy = self.TV[self.TV["Mask0"]]["dY"].value
+            err = self.TV[self.TV["Mask0"]]["DES variance"].value
+
+            table_inds = np.arange(len(self.TV))
+
+            # Index the table by increasing DES variance
+            sort = np.argsort(err)
+            sorted_inds = table_inds[self.TV["Mask0"]][sort]
+
+            resid_x = dx[sort]
+            resid_y = dy[sort]
+
+            # Split arrays into groups of nStars
+            nStars = 256
+            sorted_inds = np.array_split(sorted_inds, len(sorted_inds)//nStars)
+
+            resid_x = np.array_split(resid_x, len(dx)//nStars)
+            resid_y = np.array_split(resid_y, len(dy)//nStars)
+
+            # Find RMS and median values
+            RMSx = np.array([np.std(arr) for arr in resid_x])
+            RMSy = np.array([np.std(arr) for arr in resid_y])
+
+            # Get average RMS
+            RMSx = RMSx**2
+            RMSy = RMSy**2
+            RMSxy = 0.5 * (RMSx**2 + RMSy**2)
+            
+            if useCov:
+                DESvar = tb.Column(data=np.zeros((len(self.TV), 2, 2)), name="DES variance", unit=u.mas**2)
+                
+                for i, (group, RMS) in enumerate(zip(sorted_inds, cov)):
+                    N = len(group)
+                    RMS = np.ones((N, 2, 2))*RMS*u.mas**2
+                    DESvar[group] = RMS
+                self.TV["DES variance"] = DESvar
+            
+            else:
+                for i, (group, RMS) in enumerate(zip(sorted_inds, RMSxy)):
+                    N = len(group)
+                    RMS = np.ones(N)*RMS*(self.TV["DES variance"].unit)
+                    self.TV["DES variance"][group] = RMS
+        
+        #--------------------#
 
         # Define some placeholder arrays for removing a polynomial fit.
         x = self.TV["X"][self.TV["Mask0"]]
@@ -431,13 +487,35 @@ class dataContainer(object):
         self.TV["dY"][self.TV["Mask0"]] -= poly.evaluate(x, y)*self.TV["dY"].unit
 
         #--------------------#
+        
+        n = len(self.TV)
+        n0 = len(self.TV[self.TV["Mask0"]])
+        nTrue = int(np.floor(n0 * downselect))
+        
+        # Find the indices (relative to the entire table) of the rows
+        # where Mask0 = True. Then take a random fraction of those
+        # (specified by kwarg downselect) that will be true.
+        inds = np.arange(n)
+        inds_mask0 = inds[self.TV["Mask0"]]
+        rng = np.random.RandomState(self.randomState)
+        rng.shuffle(inds_mask0)
+        inds_mask0_True = inds_mask0[:nTrue]
+        
+        # Create a False array of the length of the entire table. Use the
+        # above indices to specify which of the rows (that already have Mask0 = True)
+        # will be True in this new mask.
+        downselectMask = np.zeros(n, dtype=bool)
+        downselectMask[inds_mask0_True] = True
+        
+        self.TV["Mask0"] = self.TV["Mask0"] & downselectMask
+
+        #--------------------#
 
         # Make an index array for the entire TV set.
         nTV = len(self.TV)
         tv_ind = np.arange(nTV)
 
         # Shuffle the index array.
-        rng = np.random.RandomState(self.randomState)
         rng.shuffle(tv_ind)
 
         # Split the index array into 5 approximately equal arrays.
@@ -811,9 +889,16 @@ def makeW(E_GAIA, E_DES):
     out[:, :, 1, 0] = np.diag(E_GAIA[:, 1, 0])
     out[:, :, 0, 1] = np.diag(E_GAIA[:, 0, 1])
     W_GAIA = np.swapaxes(out, 1, 2).reshape((2*N, 2*N))
+    
+    if E_DES.ndim == 3:
+        ExEy = flat(np.vstack([E_DES[:, 0, 0], E_DES[:, 1, 1]]).T)
+        Exy =  flat(np.vstack([E_DES[:, 0, 1], np.zeros(E_DES.shape[0])]).T)
 
-    E_DES = np.vstack([E_DES, E_DES]).T
-    W_DES = np.diag(flat(E_DES))
+        W_DES = np.diag(ExEy) + (np.diag(Exy, k=1) + np.diag(Exy, k=-1))[:-1, :-1]
+        
+    else:
+        E_DES = np.vstack([E_DES, E_DES]).T
+        W_DES = np.diag(flat(E_DES))
 
     return W_GAIA + W_DES
 
