@@ -12,7 +12,7 @@ from IPython import embed
 
 class vonKarman2KernelGPR(object):
 
-    def __init__(self, dataContainer, printing=False, outDir="."):
+    def __init__(self, dataContainer, printing=False, outDir=".", curlfree=False):
 
         self.dC = dataContainer
         self.printing = printing
@@ -21,6 +21,8 @@ class vonKarman2KernelGPR(object):
             self.paramFile = os.path.join(outDir, "params.out")
             if os.path.exists(self.paramFile):
                 os.remove(self.paramFile)
+                
+        self.curlfree = curlfree
 
     def fitCorr(self, v0=None, rmax=5*u.arcmin, nBins=50):
 
@@ -99,8 +101,9 @@ class vonKarman2KernelGPR(object):
         
         du, dv = GPRutils.getGrid(self.dC.Xtrain, self.dC.Xtrain) 
         Cuv = self.ttt.getCuv(du, dv)
-        Cuv[:, :, 0, 1] *= 0
-        Cuv[:, :, 1, 0] *= 0
+        if not self.curlfree:
+            Cuv[:, :, 0, 1] *= 0
+            Cuv[:, :, 1, 0] *= 0
         n1, n2 = Cuv.shape[0], Cuv.shape[1]
         
         K = np.swapaxes(Cuv, 1, 2).reshape(2*n1, 2*n2)
@@ -114,8 +117,9 @@ class vonKarman2KernelGPR(object):
 
         du, dv = GPRutils.getGrid(X, self.dC.Xtrain)
         Cuv = self.ttt.getCuv(du, dv)
-        Cuv[:, :, 0, 1] *= 0
-        Cuv[:, :, 1, 0] *= 0
+        if not self.curlfree:
+            Cuv[:, :, 0, 1] *= 0
+            Cuv[:, :, 1, 0] *= 0
         n1, n2 = Cuv.shape[0], Cuv.shape[1]
 
         Ks = np.swapaxes(Cuv, 1, 2).reshape(2*n1, 2*n2)
