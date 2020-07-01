@@ -177,8 +177,7 @@ class dataContainer(object):
         maxDESErr=np.inf*u.mas**2,
         minDESErr=-np.inf*u.mas**2,
         downselect=1.0,
-        useRMS=False,
-        useCov=False
+        useRMS=False
         ):
         """
         Docs go here :)
@@ -454,25 +453,12 @@ class dataContainer(object):
             RMSx = np.array([np.std(arr) for arr in resid_x])
             RMSy = np.array([np.std(arr) for arr in resid_y])
 
-            # Get average RMS
-            RMSx = RMSx**2
-            RMSy = RMSy**2
-            RMSxy = 0.5 * (RMSx**2 + RMSy**2)
-            
-            if useCov:
-                DESvar = tb.Column(data=np.zeros((len(self.TV), 2, 2)), name="DES variance", unit=u.mas**2)
-                
-                for i, (group, RMS) in enumerate(zip(sorted_inds, cov)):
-                    N = len(group)
-                    RMS = np.ones((N, 2, 2))*RMS*u.mas**2
-                    DESvar[group] = RMS
-                self.TV["DES variance"] = DESvar
-            
-            else:
-                for i, (group, RMS) in enumerate(zip(sorted_inds, RMSxy)):
-                    N = len(group)
-                    RMS = np.ones(N)*RMS*(self.TV["DES variance"].unit)
-                    self.TV["DES variance"][group] = RMS
+            DEScov = np.zeros((len(self.TV), 2, 2))
+            for i, (ind, rmsx, rmsy) in enumerate(zip(sorted_inds, RMSx, RMSy)):
+                DEScov[ind, 0, 0] = rmsx**2
+                DEScov[ind, 1, 1] = rmsy**2
+            DESvar = tb.Column(data=DEScov, name="DES variance", unit=u.mas**2)
+            self.TV["DES variance"] = DESvar
         
         #--------------------#
 
