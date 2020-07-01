@@ -21,6 +21,8 @@ class vonKarman2KernelGPR(object):
             self.paramFile = os.path.join(outDir, "params.out")
             if os.path.exists(self.paramFile):
                 os.remove(self.paramFile)
+        else:
+            self.paramFile = None
                 
         self.curlfree = curlfree
 
