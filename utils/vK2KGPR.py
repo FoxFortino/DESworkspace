@@ -12,7 +12,7 @@ from IPython import embed
 
 class vonKarman2KernelGPR(object):
 
-    def __init__(self, dataContainer, printing=False, outDir=".", curlfree=False):
+    def __init__(self, dataContainer, printing=True, outDir=".", curl=False):
 
         self.dC = dataContainer
         self.printing = printing
@@ -24,7 +24,7 @@ class vonKarman2KernelGPR(object):
         else:
             self.paramFile = None
                 
-        self.curlfree = curlfree
+        self.curl = curl
 
     def fitCorr(self, v0=None, rmax=5*u.arcmin, nBins=50):
 
@@ -100,33 +100,61 @@ class vonKarman2KernelGPR(object):
             outerScale=params[1],
             diameter=params[2],
             wind=(params[3], params[4]))
-        
+
         du, dv = GPRutils.getGrid(self.dC.Xtrain, self.dC.Xtrain) 
-        Cuv = self.ttt.getCuv(du, dv)
-        if not self.curlfree:
-            Cuv[:, :, 0, 1] *= 0
-            Cuv[:, :, 1, 0] *= 0
-        n1, n2 = Cuv.shape[0], Cuv.shape[1]
+        C = self.ttt.getCuv(du, dv)
+        Cuu = C[:, :, 0, 0]
+        Cvv = C[:, :, 1, 1]
+        Cuv = C[:, :, 0, 1]
+        Cvu = C[:, :, 1, 0]
         
-        K = np.swapaxes(Cuv, 1, 2).reshape(2*n1, 2*n2)
-        W = GPRutils.makeW(self.dC.Etrain_GAIA, self.dC.Etrain_DES)
-        L = np.linalg.cholesky(K + W)
-        
-        self.alpha = np.linalg.solve(L, GPRutils.flat(self.dC.Ytrain))
-        self.alpha = np.linalg.solve(L.T, self.alpha)
+        if self.curl:
+            n1, n2 = C.shape[0], C.shape[1]
+            K = np.swapaxes(C, 1, 2).reshape(2*n1, 2*n2)
+            W_GAIA, W_DES = GPRutils.makeW(self.dC.Etrain_GAIA, self.dC.Etrain_DES, useRMS=self.dC.useRMS, curl=True)
+            L = np.linalg.cholesky(K + W_GAIA + W_DES)
+
+            self.alpha = np.linalg.solve(L, GPRutils.flat(self.dC.Ytrain))
+            self.alpha = np.linalg.solve(L.T, self.alpha)
+
+        else:
+            Ku = Cuu
+            Kv = Cvv
+
+            Wu_GAIA, Wv_GAIA, Wu_DES, Wv_DES = GPRutils.makeW(self.dC.Etrain_GAIA, self.dC.Etrain_DES, useRMS=self.dC.useRMS)
+
+            Lu = np.linalg.cholesky(Ku + Wu_GAIA + Wu_DES)
+            Lv = np.linalg.cholesky(Kv + Wv_GAIA + Wv_DES)
+
+            self.alpha_u = np.linalg.solve(Lu, self.dC.Ytrain[:, 0])
+            self.alpha_v = np.linalg.solve(Lv, self.dC.Ytrain[:, 1])
+
+            self.alpha_u = np.linalg.solve(Lu.T, self.alpha_u)
+            self.alpha_v = np.linalg.solve(Lu.T, self.alpha_v)
         
     def predict(self, X):
-
+        
         du, dv = GPRutils.getGrid(X, self.dC.Xtrain)
-        Cuv = self.ttt.getCuv(du, dv)
-        if not self.curlfree:
-            Cuv[:, :, 0, 1] *= 0
-            Cuv[:, :, 1, 0] *= 0
-        n1, n2 = Cuv.shape[0], Cuv.shape[1]
+        Cs = self.ttt.getCuv(du, dv)
+        Csuu = Cs[:, :, 0, 0]
+        Csvv = Cs[:, :, 1, 1]
+        Csuv = Cs[:, :, 0, 1]
+        Csvu = Cs[:, :, 1, 0]
+        
+        if self.curl:
+            n1, n2 = Cs.shape[0], Cs.shape[1]
+            Ks = np.swapaxes(Cs, 1, 2).reshape(2*n1, 2*n2)
 
-        Ks = np.swapaxes(Cuv, 1, 2).reshape(2*n1, 2*n2)
+            self.dC.fbar_s = GPRutils.unflat(np.dot(Ks.T, self.alpha))
 
-        self.dC.fbar_s = GPRutils.unflat(np.dot(Ks.T, self.alpha))
+        else:
+            Ksu = Csuu
+            Ksv = Csvv
+
+            fbar_s_u = np.dot(Ksu.T, self.alpha_u)
+            fbar_s_v = np.dot(Ksv.T, self.alpha_v)
+
+            self.dC.fbar_s = np.vstack([fbar_s_u, fbar_s_v]).T
 
     def figureOfMerit(self, params):
         self.fit(params)
@@ -148,7 +176,7 @@ class vonKarman2KernelGPR(object):
     def optimize(self, v0=None):
         
         if v0 is None:
-            v0 = self.opt_result[0]
+            v0 = self.dC.fitCorrParams
         simplex0 = np.vstack(
             [v0, np.vstack([v0]*v0.shape[0]) + np.diag(v0*0.15)]
         )
