@@ -61,105 +61,102 @@ class dataContainer(object):
         print(f"xi = {np.round(xi0, 3)} ± {np.round(np.sqrt(Xerr**2 + Yerr**2), 3)} mas^2")
         print()
         
-        try:
-            print("Kernel Parameters from 2d Correlation Fitting")
-            vK2KGPR.printParams(
-                self.fitCorrParams,
-                header=True,
-                printing=True
-                )
-            vK2KGPR.printParams(
-                self.fitCorrParams,
-                printing=True
-                )
-            print()
+        print("Kernel Parameters from 2d Correlation Fitting")
+        vK2KGPR.printParams(
+            self.fitCorrParams,
+            header=True,
+            printing=True
+            )
+        vK2KGPR.printParams(
+            self.fitCorrParams,
+            printing=True
+            )
+        print()
 
-            print("Kernel Parameters from GPR Optimization")
-            vK2KGPR.printParams(
-                self.params,
-                header=True,
-                printing=True
-                )
-            vK2KGPR.printParams(
-                self.params,
-                printing=True
-                )
-            print()
+        print("Kernel Parameters from GPR Optimization")
+        vK2KGPR.printParams(
+            self.params,
+            header=True,
+            printing=True
+            )
+        vK2KGPR.printParams(
+            self.params,
+            printing=True
+            )
+        print()
 
-            print("Jackknifed xi+ (Inter-set pairs excluded)")
-            xi0 = self.header["xi0"]
-            Xerr = self.header["xi0_Xerr"]
-            Yerr = self.header["xi0_Yerr"]
-            print(f"xi0: {np.round(xi0, 3)} ± {np.round(np.sqrt(Xerr**2 + Yerr**2), 3)} mas^2")
-            xif = self.header["xif"]
-            Xerr = self.header["xif_Xerr"]
-            Yerr = self.header["xif_Yerr"]
-            print(f"xif: {np.round(xif, 3)} ± {np.round(np.sqrt(Xerr**2 + Yerr**2), 3)} mas^2")
-            print(f"Reduction: {np.round(xi0/xif, 3)}")
-            print()
-            
-            ttt = vk.TurbulentLayer(
-                variance=self.fitCorrParams[0],
-                outerScale=self.fitCorrParams[1],
-                diameter=self.fitCorrParams[2],
-                wind=(self.fitCorrParams[3], self.fitCorrParams[4]))
-            vk.plotCuv(ttt)
+        print("Jackknifed xi+ (Inter-set pairs excluded)")
+        xi0 = self.header["xi0"]
+        Xerr = self.header["xi0_Xerr"]
+        Yerr = self.header["xi0_Yerr"]
+        print(f"xi0: {np.round(xi0, 3)} ± {np.round(np.sqrt(Xerr**2 + Yerr**2), 3)} mas^2")
+        xif = self.header["xif"]
+        Xerr = self.header["xif_Xerr"]
+        Yerr = self.header["xif_Yerr"]
+        print(f"xif: {np.round(xif, 3)} ± {np.round(np.sqrt(Xerr**2 + Yerr**2), 3)} mas^2")
+        print(f"Reduction: {np.round(xi0/xif, 3)}")
+        print()
 
-            ttt = vk.TurbulentLayer(
-                variance=self.params[0],
-                outerScale=self.params[1],
-                diameter=self.params[2],
-                wind=(self.params[3], self.params[4]))
-            vk.plotCuv(ttt)
-            
-            x = self.TV["X"][self.TV["Maskf"]]
-            y = self.TV["Y"][self.TV["Maskf"]]
-            dx = self.TV["dX"][self.TV["Maskf"]]
-            dy = self.TV["dY"][self.TV["Maskf"]]
-            
-            if self.TV["DES variance"].ndim == 3:
-                err = np.sqrt(self.TV[self.TV["Maskf"]]["DES variance"][:, 0, 1])
-            else:
-                err = np.sqrt(self.TV["DES variance"][self.TV["Maskf"]])
+        ttt = vk.TurbulentLayer(
+            variance=self.fitCorrParams[0],
+            outerScale=self.fitCorrParams[1],
+            diameter=self.fitCorrParams[2],
+            wind=(self.fitCorrParams[3], self.fitCorrParams[4]))
+        vk.plotCuv(ttt)
 
-            x2 = x
-            y2 = y
-            dx2 = dx - self.TV["fbar_s dX"][self.TV["Maskf"]]
-            dy2 = dy - self.TV["fbar_s dY"][self.TV["Maskf"]]
-            err2 = err
+        ttt = vk.TurbulentLayer(
+            variance=self.params[0],
+            outerScale=self.params[1],
+            diameter=self.params[2],
+            wind=(self.params[3], self.params[4]))
+        vk.plotCuv(ttt)
 
-            plotGPR.AstrometricResiduals(
-                x, y, dx, dy, err,
-                x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
-                exposure=self.expNum,
-                pixelsPerBin=450,
-                scale=200*u.mas,
-                arrowScale=10*u.mas)
+        x = self.TV["X"][self.TV["Maskf"]]
+        y = self.TV["Y"][self.TV["Maskf"]]
+        dx = self.TV["dX"][self.TV["Maskf"]]
+        dy = self.TV["dY"][self.TV["Maskf"]]
+        if self.header["useRMS"]:
+            RMSx2 = self.TV[self.TV["Maskf"]]["DES variance"][:, 0, 0]
+            RMSy2 = self.TV[self.TV["Maskf"]]["DES variance"][:, 1, 1]
+            err = np.sqrt(0.5 * (RMSx2 + RMSy2))
+        else:
+            err = np.sqrt(self.TV[self.TV["Maskf"]]["DES variance"])
 
-            plotGPR.DivCurl(
-                x, y, dx, dy, err,
-                x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
-                exposure=self.expNum,
-                pixelsPerBin=750,
-                scale=50)
+        x2 = x
+        y2 = y
+        dx2 = dx - self.TV["fbar_s dX"][self.TV["Maskf"]]
+        dy2 = dy - self.TV["fbar_s dY"][self.TV["Maskf"]]
+        err2 = err
 
-            plotGPR.Correlation(
-                x, y, dx, dy,
-                x2=x2, y2=y2, dx2=dx2, dy2=dy2,
-                exposure=self.expNum,
-                ylim=(None, None))
+        plotGPR.AstrometricResiduals(
+            x, y, dx, dy, err,
+            x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
+            exposure=self.expNum,
+            pixelsPerBin=450,
+            scale=200*u.mas,
+            arrowScale=10*u.mas)
 
-            plotGPR.Correlation2D(
-                x, y, dx, dy,
-                x2=x2, y2=y2, dx2=dx2, dy2=dy2,
-                exposure=self.expNum,
-                nBins=100,
-                vmin=-100*u.mas**2,
-                vmax=100*u.mas**2,
-                rmax=0.50*u.deg)
+        plotGPR.DivCurl(
+            x, y, dx, dy, err,
+            x2=x2, y2=y2, dx2=dx2, dy2=dy2, err2=err2,
+            exposure=self.expNum,
+            pixelsPerBin=750,
+            scale=50)
 
-        except Exception as E:
-            print(E)
+        plotGPR.Correlation(
+            x, y, dx, dy,
+            x2=x2, y2=y2, dx2=dx2, dy2=dy2,
+            exposure=self.expNum,
+            ylim=(None, None))
+
+        plotGPR.Correlation2D(
+            x, y, dx, dy,
+            x2=x2, y2=y2, dx2=dx2, dy2=dy2,
+            exposure=self.expNum,
+            nBins=100,
+            vmin=-100*u.mas**2,
+            vmax=100*u.mas**2,
+            rmax=0.50*u.deg)
 
     def load(
         self,
@@ -190,6 +187,10 @@ class dataContainer(object):
         self.tol = tol
         self.nSigma = nSigma
         self.vSet = vSet
+        self.maxDESErr = maxDESErr
+        self.minDESErr = minDESErr
+        self.downselect = downselect
+        self.useRMS = useRMS
 
         # Load in data from a reference tile (tile0). This tile is arbitrary.
         # At the time of implementation, I do not have access to a reference
@@ -420,13 +421,13 @@ class dataContainer(object):
         
         # Remove stars that have less variance than minDESErr and stars
         # that have more variance than maxDESErr. Fold this into Mask0.
-        minMask = self.TV["DES variance"] > minDESErr
-        maxMask = self.TV["DES variance"] < maxDESErr
+        minMask = self.TV["DES variance"] > self.minDESErr
+        maxMask = self.TV["DES variance"] < self.maxDESErr
         self.TV["Mask0"] = self.TV["Mask0"] & minMask & maxMask
         
         #--------------------#
         
-        if useRMS:
+        if self.useRMS:
             x = self.TV[self.TV["Mask0"]]["X"].value
             y = self.TV[self.TV["Mask0"]]["Y"].value
             dx = self.TV[self.TV["Mask0"]]["dX"].value
@@ -479,7 +480,7 @@ class dataContainer(object):
         
         n = len(self.TV)
         n0 = len(self.TV[self.TV["Mask0"]])
-        nTrue = int(np.floor(n0 * downselect))
+        nTrue = int(np.floor(n0 * self.downselect))
         
         # Find the indices (relative to the entire table) of the rows
         # where Mask0 = True. Then take a random fraction of those
@@ -702,6 +703,16 @@ class dataContainer(object):
         hdr["nSigma"] = self.nSigma
         hdr["vSet"] = self.vSet
         hdr["randomState"] = self.randomState
+        if np.abs(self.maxDESErr) == np.inf:
+            hdr["maxDESErr"] = 0
+        else:
+            hdr["maxDESErr"] = self.maxDESErr.value
+        if np.abs(self.minDESErr) == np.inf:
+            hdr["minDESErr"] = 0
+        else:
+            hdr["minDESErr"] = self.minDESErr.value
+        hdr["downselect"] = self.downselect
+        hdr["useRMS"] = self.useRMS
         
         xi, xi2 = self.JackKnifeXi(allPairs=True)
         hdr["allPairs_xi0"] = xi[0].value
@@ -737,7 +748,7 @@ class dataContainer(object):
 
         hdul = fits.HDUList([prim_HDU, TV_HDU, Pred_HDU])
         hdul.writeto(
-            os.path.join(savePath, f"DES{self.expNum}_{self.band}.fits"),
+            os.path.join(savePath, f"DESGP{self.expNum}.fits"),
             overwrite=overwrite)
 
 def loadFITS(FITSfile):
@@ -755,6 +766,10 @@ def loadFITS(FITSfile):
     dataC.nSigma = hdul[0].header["nSigma"]
     dataC.vSet = hdul[0].header["vSet"]
     dataC.randomState = hdul[0].header["randomState"]
+    dataC.maxDESErr = hdul[0].header["maxDESErr"]*u.mas**2
+    dataC.minDESErr = hdul[0].header["minDESErr"]*u.mas**2
+    dataC.downselect = hdul[0].header["downselect"]
+    dataC.useRMS = hdul[0].header["useRMS"]
     
     dataC.params = np.zeros(5)
     dataC.params[0] = hdul[0].header["var"]
@@ -869,27 +884,38 @@ def getXi(X, Y, rMax=0.02*u.deg, rMin=5*u.mas):
 
     return xiplus, Uerr, Verr, prs
 
-def makeW(E_GAIA, E_DES):
-
-    N = E_GAIA.shape[0]
-    out = np.zeros((N, N, 2, 2))
-    out[:, :, 0, 0] = np.diag(E_GAIA[:, 0, 0])
-    out[:, :, 1, 1] = np.diag(E_GAIA[:, 1, 1])
-    out[:, :, 1, 0] = np.diag(E_GAIA[:, 1, 0])
-    out[:, :, 0, 1] = np.diag(E_GAIA[:, 0, 1])
-    W_GAIA = np.swapaxes(out, 1, 2).reshape((2*N, 2*N))
+def makeW(E_GAIA, E_DES, useRMS=False, curl=False):
     
-    if E_DES.ndim == 3:
-        ExEy = flat(np.vstack([E_DES[:, 0, 0], E_DES[:, 1, 1]]).T)
-        Exy =  flat(np.vstack([E_DES[:, 0, 1], np.zeros(E_DES.shape[0])]).T)
-
-        W_DES = np.diag(ExEy) + (np.diag(Exy, k=1) + np.diag(Exy, k=-1))[:-1, :-1]
+    # DES errors need to be handled a bit differently when useRMS is True.
+    if useRMS:
+        Ex = E_DES[:, 0, 0]
+        Ey = E_DES[:, 0, 0]
+    else:
+        Ex = E_DES
+        Ey = E_DES
+        
+    if curl:
+        E = np.vstack([Ex, Ey]).T
+        W_DES = np.diag(flat(E))
+        
+        N = E_GAIA.shape[0]
+        out = np.zeros((N, N, 2, 2))
+        out[:, :, 0, 0] = np.diag(E_GAIA[:, 0, 0])
+        out[:, :, 1, 1] = np.diag(E_GAIA[:, 1, 1])
+        out[:, :, 1, 0] = np.diag(E_GAIA[:, 1, 0])
+        out[:, :, 0, 1] = np.diag(E_GAIA[:, 0, 1])
+        W_GAIA = np.swapaxes(out, 1, 2).reshape((2*N, 2*N))
+        
+        return W_GAIA, W_DES
         
     else:
-        E_DES = np.vstack([E_DES, E_DES]).T
-        W_DES = np.diag(flat(E_DES))
-
-    return W_GAIA + W_DES
+        W_DESx = np.diag(Ex)
+        W_DESy = np.diag(Ey)
+        
+        W_GAIAx = np.diag(E_GAIA[:, 0, 0])
+        W_GAIAy = np.diag(E_GAIA[:, 1, 1])
+        
+        return W_GAIAx, W_GAIAy, W_DESx, W_DESy
 
 def getGrid(X1, X2):
     u1, u2 = X1[:, 0], X2[:, 0]
@@ -1022,9 +1048,9 @@ def calcPixelGrid(
     
     # ???
     index = iy * binGridSize_x + ix
-    
+
     # Converts from standard deviation to 1/variance
-    weight = np.where(err > 0., err**-2., 0.)
+    weight = np.where(err > 0.*u.mas, err**-2., 0.*u.mas**-2).value
     
     # ???
     totalBinGridSize = binGridSize_x * binGridSize_y
@@ -1032,21 +1058,21 @@ def calcPixelGrid(
         index,
         bins=totalBinGridSize,
         range=(-0.5, totalBinGridSize + 0.5),
-        weights=(weight * dx))[0]
+        weights=(weight * dx))[0].value
     sumWeights_y = np.histogram(
         index,
         bins=totalBinGridSize,
         range=(-0.5, totalBinGridSize + 0.5),
-        weights=(weight * dy))[0]
+        weights=(weight * dy))[0].value
     sumWeights = np.histogram(
         index,
         bins=totalBinGridSize,
         range=(-0.5, totalBinGridSize + 0.5),
         weights=weight)[0]
-    
+
     # Smallest weight that we'd want to plot a point for
     minWeight = (maxErr**-2.).to(u.mas**-2).value
-    
+
     # If a value is below minWeight, then replace it with noData
     sumWeights_x = np.where(
         sumWeights > minWeight,
