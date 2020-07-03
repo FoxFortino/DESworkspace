@@ -1,33 +1,12 @@
-# Standard modules
-import traceback
-import sys
 import os
-import shutil
 import glob
+import sys
+import traceback
 
-# Willow Fox Fortino's modules
 import GPRutils
 import vK2KGPR
-import plotGPR
 
-# Professor Gary Bernstein's modules
-import getGaiaDR2 as gaia
-import gbutil
-
-# Science modules
 import numpy as np
-import astropy.units as u
-import astropy.constants as c
-import astropy.coordinates as co
-import astropy.table as tb
-import astropy.io.fits as fits
-import astropy.stats as stats
-from astropy.time import Time
-from scipy.spatial.ckdtree import cKDTree
-
-from IPython import embed
-from importlib import reload
-
 
 
 def JackKnifeOld(npz, file):

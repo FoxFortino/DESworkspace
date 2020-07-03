@@ -4,4 +4,4 @@
 #$ -cwd
 #$ -V
 
-python RetroactiveJackKnifing.py
+python ~/DESworkspace/scripts/RetroactiveJackKnifing.py
