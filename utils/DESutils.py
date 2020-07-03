@@ -65,8 +65,10 @@ def findExpNums(
 
 def getBand(
     expNum,
-    zoneDir="/media/pedro/Data/austinfortino/zone134/",
-    tileRef="/home/austinfortino/DESworkspace/data/expnum_tile.fits.gz"
+    zoneDir="/data3/garyb/tno/y6/zone134",
+    #zoneDir="/media/pedro/Data/austinfortino/zone134/",
+    tileRef="/home/fortino/DESworkspace/data/expnum_tile.fits.gz",
+    #tileRef="/home/austinfortino/DESworkspace/data/expnum_tile.fits.gz"
     ):
     
     tiles_tab = tb.Table.read(tileRef)
