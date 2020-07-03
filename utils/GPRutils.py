@@ -2,6 +2,7 @@
 import os
 import shutil
 import time
+import glob
 
 # Willow Fox Fortino's modules
 import vK2KGPR
@@ -142,6 +143,23 @@ class dataContainer(object):
             exposure=self.expNum,
             pixelsPerBin=750,
             scale=50)
+        
+        x = self.TV["X"][self.TV["Maskf"] & self.TV["Subset A"]]
+        y = self.TV["Y"][self.TV["Maskf"] & self.TV["Subset A"]]
+        dx = self.TV["dX"][self.TV["Maskf"] & self.TV["Subset A"]]
+        dy = self.TV["dY"][self.TV["Maskf"] & self.TV["Subset A"]]
+        if self.header["useRMS"]:
+            RMSx2 = self.TV[self.TV["Maskf"] & self.TV["Subset A"]]["DES variance"][:, 0, 0]
+            RMSy2 = self.TV[self.TV["Maskf"] & self.TV["Subset A"]]["DES variance"][:, 1, 1]
+            err = np.sqrt(0.5 * (RMSx2 + RMSy2))
+        else:
+            err = np.sqrt(self.TV[self.TV["Maskf"] & self.TV["Subset A"]]["DES variance"])
+
+        x2 = x
+        y2 = y
+        dx2 = dx - self.TV["fbar_s dX"][self.TV["Maskf"] & self.TV["Subset A"]]
+        dy2 = dy - self.TV["fbar_s dY"][self.TV["Maskf"] & self.TV["Subset A"]]
+        err2 = err
 
         plotGPR.Correlation(
             x, y, dx, dy,
@@ -161,13 +179,13 @@ class dataContainer(object):
     def load(
         self,
         expNum,
-        # zoneDir="/data3/garyb/tno/y6/zone134",
-        zoneDir="/media/pedro/Data/austinfortino/zone134/",
+        zoneDir="/data3/garyb/tno/y6/zone134",
+        #zoneDir="/media/pedro/Data/austinfortino/zone134/",
         tile0="DES2203-4623_final.fits",
-        # earthRef="/home/fortino/y6a1.exposures.positions.fits.gz",
-        earthRef="/home/austinfortino/DESworkspace/data/y6a1.exposures.positions.fits.gz",
-        # tileRef="/home/fortino/expnum_tile.fits.gz",
-        tileRef="/home/austinfortino/DESworkspace/data/expnum_tile.fits.gz",
+        earthRef="/home/fortino/DESworkspace/data/y6a1.exposures.positions.fits.gz",
+        #earthRef="/home/austinfortino/DESworkspace/data/y6a1.exposures.positions.fits.gz",
+        tileRef="/home/fortino/DESworkspace/data/expnum_tile.fits.gz",
+        #tileRef="/home/austinfortino/DESworkspace/data/expnum_tile.fits.gz",
         tol=0.5*u.arcsec,
         nSigma=4,
         vSet="Subset A",
@@ -191,6 +209,8 @@ class dataContainer(object):
         self.minDESErr = minDESErr
         self.downselect = downselect
         self.useRMS = useRMS
+        
+        self.curl = False
 
         # Load in data from a reference tile (tile0). This tile is arbitrary.
         # At the time of implementation, I do not have access to a reference
@@ -713,6 +733,7 @@ class dataContainer(object):
             hdr["minDESErr"] = self.minDESErr.value
         hdr["downselect"] = self.downselect
         hdr["useRMS"] = self.useRMS
+        hdr["curl"] = self.curl
         
         xi, xi2 = self.JackKnifeXi(allPairs=True)
         hdr["allPairs_xi0"] = xi[0].value
@@ -747,12 +768,23 @@ class dataContainer(object):
         Pred_HDU = fits.BinTableHDU(data=self.Pred)
 
         hdul = fits.HDUList([prim_HDU, TV_HDU, Pred_HDU])
+        filename = ["GPR", str(self.expNum)]
+
+        ext = self.band
+        if self.useRMS:
+            ext += "R"
+        if self.curl:
+            ext += "C"
+        filename.append(ext)
+        filename.append("fits")
+
         hdul.writeto(
-            os.path.join(savePath, f"DESGP{self.expNum}.fits"),
+            os.path.join(savePath, ".".join(filename)),
             overwrite=overwrite)
 
 def loadFITS(FITSfile):
-    hdul = fits.open(FITSfile)
+    file = glob.glob(FITSfile)[0]
+    hdul = fits.open(file)
 
     dataC = dataContainer()
     dataC.header = hdul[0].header
@@ -770,6 +802,7 @@ def loadFITS(FITSfile):
     dataC.minDESErr = hdul[0].header["minDESErr"]*u.mas**2
     dataC.downselect = hdul[0].header["downselect"]
     dataC.useRMS = hdul[0].header["useRMS"]
+    dataC.curl = hdul[0].header["curl"]
     
     dataC.params = np.zeros(5)
     dataC.params[0] = hdul[0].header["var"]
@@ -889,7 +922,7 @@ def makeW(E_GAIA, E_DES, useRMS=False, curl=False):
     # DES errors need to be handled a bit differently when useRMS is True.
     if useRMS:
         Ex = E_DES[:, 0, 0]
-        Ey = E_DES[:, 0, 0]
+        Ey = E_DES[:, 1, 1]
     else:
         Ex = E_DES
         Ey = E_DES
