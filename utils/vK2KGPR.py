@@ -24,7 +24,7 @@ class vonKarman2KernelGPR(object):
         else:
             self.paramFile = None
                 
-        self.curl = curl
+        self.dC.curl = curl
 
     def fitCorr(self, v0=None, rmax=5*u.arcmin, nBins=50):
 
@@ -108,7 +108,7 @@ class vonKarman2KernelGPR(object):
         Cuv = C[:, :, 0, 1]
         Cvu = C[:, :, 1, 0]
         
-        if self.curl:
+        if self.dC.curl:
             n1, n2 = C.shape[0], C.shape[1]
             K = np.swapaxes(C, 1, 2).reshape(2*n1, 2*n2)
             W_GAIA, W_DES = GPRutils.makeW(self.dC.Etrain_GAIA, self.dC.Etrain_DES, useRMS=self.dC.useRMS, curl=True)
@@ -141,7 +141,7 @@ class vonKarman2KernelGPR(object):
         Csuv = Cs[:, :, 0, 1]
         Csvu = Cs[:, :, 1, 0]
         
-        if self.curl:
+        if self.dC.curl:
             n1, n2 = Cs.shape[0], Cs.shape[1]
             Ks = np.swapaxes(Cs, 1, 2).reshape(2*n1, 2*n2)
 
