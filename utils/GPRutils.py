@@ -22,6 +22,8 @@ import astropy.stats as stats
 from astropy.time import Time
 from scipy.spatial.ckdtree import cKDTree
 
+from IPython import embed
+
 
 class dataContainer(object):
     """
@@ -46,7 +48,7 @@ class dataContainer(object):
         """
         self.randomState = randomState
 
-    def summarize(self, noplots: bool = False) -> None:
+    def summarize(self, noplots: bool = False, redonly=False) -> None:
         """
         Summarize the data in this object.
 
@@ -78,45 +80,67 @@ class dataContainer(object):
             much faster ifi you only want to know the xi_0.02 and kernel
             parameters.
         """
-        print(f"Exposure: {self.expNum}")
-        print(f"Band: {self.band}")
+        
+        if redonly:
+            xi0 = self.header["xi0"]
+            Xerr = self.header["xi0_Xerr"]
+            Yerr = self.header["xi0_Yerr"]
+            xi0err = np.sqrt(Xerr**2 + Yerr**2)
 
-        print("Kernel Parameters from 2d Correlation Fitting")
-        vK2KGPR.printParams(
-            self.fitCorrParams,
-            header=True,
-            printing=True
-            )
-        vK2KGPR.printParams(
-            self.fitCorrParams,
-            printing=True
-            )
-        print()
+            xif = self.header["xif"]
+            Xerr = self.header["xif_Xerr"]
+            Yerr = self.header["xif_Yerr"]
+            xiferr = np.sqrt(Xerr**2 + Yerr**2)
 
-        print("Kernel Parameters from GPR Optimization")
-        vK2KGPR.printParams(
-            self.params,
-            header=True,
-            printing=True
-            )
-        vK2KGPR.printParams(
-            self.params,
-            printing=True
-            )
-        print()
+            red = xi0/xif
+            rederr = np.sqrt(((xi0err/xi0)**2 + (xiferr/xif)**2) * red**2)
+            print(f"{redonly:<15}: {red:.3f} ± {rederr:.3f}")
+            return
 
-        print("Jackknifed xi+ (Inter-set pairs excluded)")
+        
+        exp_band = f"{self.expNum} {self.band}"
+        print(f"#####{exp_band:-^20}#####")        
+        try:
+            print("Fitted von Kármán kernel parameters:")
+            printParams(self.fitCorrParams, header=True, printing=True)
+            printParams(self.fitCorrParams, printing=True)
+            xi0 = self.header["fC_xi0"]
+            Xerr = self.header["fC_xi0_Xerr"]
+            Yerr = self.header["fC_xi0_Yerr"]
+            xi0err = np.sqrt(Xerr**2 + Yerr**2)
+            print(f"xi0: {xi0:.3f} ± {xi0err:.3f}")
+
+            xif = self.header["fC_xif"]
+            Xerr = self.header["fC_xif_Xerr"]
+            Yerr = self.header["fC_xif_Yerr"]
+            xiferr = np.sqrt(Xerr**2 + Yerr**2)
+            print(f"xif: {xif:.3f} ± {xiferr:.3f}")
+
+            red = xi0/xif
+            rederr = np.sqrt(((xi0err/xi0)**2 + (xiferr/xif)**2) * red**2)
+            print(f"Reduction: {red:.3f} ± {rederr:.3f}")
+            print()
+        except Exception:
+            print()
+
+        print("Final von Kármán kernel parameters:")
+        printParams(self.params, header=True, printing=True)
+        printParams(self.params, printing=True)
         xi0 = self.header["xi0"]
         Xerr = self.header["xi0_Xerr"]
         Yerr = self.header["xi0_Yerr"]
-        print(f"xi0: {np.round(xi0, 3)} ± "
-              f"{np.round(np.sqrt(Xerr**2 + Yerr**2), 3)} mas^2")
+        xi0err = np.sqrt(Xerr**2 + Yerr**2)
+        print(f"xi0: {xi0:.3f} ± {xi0err:.3f}")
+
         xif = self.header["xif"]
         Xerr = self.header["xif_Xerr"]
         Yerr = self.header["xif_Yerr"]
-        print(f"xif: {np.round(xif, 3)} ± "
-              f"{np.round(np.sqrt(Xerr**2 + Yerr**2), 3)} mas^2")
-        print(f"Reduction: {np.round(xi0/xif, 3)}")
+        xiferr = np.sqrt(Xerr**2 + Yerr**2)
+        print(f"xif: {xif:.3f} ± {xiferr:.3f}")
+
+        red = xi0/xif
+        rederr = np.sqrt(((xi0err/xi0)**2 + (xiferr/xif)**2) * red**2)
+        print(f"Reduction: {red:.3f} ± {rederr:.3f}")
         print()
 
         if noplots:
@@ -233,8 +257,9 @@ class dataContainer(object):
         maxDESErr: u.mas**2 = np.inf*u.mas**2,
         minDESErr: u.mas**2 = -np.inf*u.mas**2,
         downselect: float = 1.0,
-        useRMS: bool = False
-            ) -> None:
+        useRMS: bool = False,
+        returnObs: bool = False
+            ):
         """
         This function formats DES and Gaia astrometry data.
 
@@ -294,6 +319,8 @@ class dataContainer(object):
         ra0 = np.array(pos_tab["ra"])[0]*u.deg
         dec0 = np.array(pos_tab["dec"])[0]*u.deg
         DES_obs = Time(np.array(pos_tab["mjd_mid"])[0], format="mjd")
+        if returnObs:
+            return DES_obs
 
         # Create an empty astropy table with all of the necessary columns.
         file0 = sorted(glob.glob(os.path.join(zoneDir, "*fits")))[0]
@@ -307,8 +334,12 @@ class dataContainer(object):
         tiles = tiles_tab[np.array(tiles_tab["EXPNUM"]) == self.expNum]
         tiles = tiles["TILENAME"]
 
+        # If tiles is empty then tileRef has no information on that exposure.
+        if not tiles.size:
+            raise ValueError(f"Exposure {expNum} not present in {zoneDir}.")
+            
         # Loop through each tile, open the table, and append (with tb.vstack)
-        # the data to our empty table.
+        # the data to our empty table.            
         for tile in tiles:
             try:
                 tile = str(tile) + "_final.fits"
@@ -320,8 +351,14 @@ class dataContainer(object):
                 print(f"File not found: {file}, continuing without it")
                 continue
 
+        # Check if no tiles at all were found in zoneDir.
+        if not len(DES_tab):
+            raise FileNotFoundError(f"No tiles found in {zoneDir}")
+
         # For future reference, save the passband of the exposure.
         self.band = np.unique(DES_tab["BAND"])[0]
+        if self.band == "Y":
+            raise Exception(f"{expNum} is Y band.")
 
         print(f"Exposure: {self.expNum}")
         print(f"Band: {self.band}")
@@ -626,6 +663,28 @@ class dataContainer(object):
             dtype=float, unit=u.mas,
             description="posterior predictive mean (dy)")
         self.TV.add_columns([fbar_s_x, fbar_s_y])
+        
+        # Make placeholder columns for fbar_s_x and fbar_s_y after the fitCorr stage.
+        fbar_s_x = tb.Column(
+            data=self.arr.copy(),
+            name=f"fbar_s dX fC",
+            dtype=float, unit=u.mas,
+            description="posterior predictive mean (dx) for fitCorr params")
+        fbar_s_y = tb.Column(
+            data=self.arr.copy(),
+            name=f"fbar_s dY fC",
+            dtype=float, unit=u.mas,
+            description="posterior predictive mean (dy) for fitCorr params")
+        self.TV.add_columns([fbar_s_x, fbar_s_y])
+        
+        # Create a placefolder column for the mask that will be generated from
+        # this sigma clipping.
+        maskX = tb.Column(data=self.arr.copy(), name=f"MaskCorrFit")
+        self.TV.add_column(maskX)
+        
+        # Initialize the column that will hold the new mask.
+        maskjk = tb.Column(data=self.arr.copy(), name="MaskJackKnife")
+        self.TV.add_column(maskjk)
 
         # Generate these values which may be useful in the future.
         self.nData = len(self.TV) + len(self.Pred)
@@ -698,13 +757,6 @@ class dataContainer(object):
             self.TV[subsets[3]]
         valid_mask = self.TV[self.vSet]
 
-        # Create a placefolder column for the mask that will be generated from
-        # this sigma clipping.
-        maskX = tb.Column(
-            data=self.arr.copy(),
-            name=f"MaskCorrFit")
-        self.TV.add_column(maskX)
-
         # Sigma clip on the validation set.
         GP.predict(self.Xvalid)
         mask = stats.sigma_clip(
@@ -726,7 +778,7 @@ class dataContainer(object):
         Train, Valid = makeSplit(self.TV[self.TV["MaskCorrFit"]], self.vSet)
         self.makeArrays(Train, Valid)
 
-    def JackKnife(self, GP: object) -> None:
+    def JackKnife(self, GP: object, params, fC: bool = False, nomask=False) -> None:
         """
         Perform k-fold cross-validation.
 
@@ -740,55 +792,97 @@ class dataContainer(object):
             necessary for doing this sigma clipping.
         """
 
-        # Initialize the column that will hold the new mask.
-        maskjk = tb.Column(data=self.arr.copy(), name=f"MaskJackKnife")
-        self.TV.add_column(maskjk)
-
         # Loop through each subset.
         subsets = ["Subset A", "Subset B", "Subset C", "Subset D", "Subset E"]
         for i in range(5):
+            if nomask:
+                # Generating training and validation set arrays for this
+                # particular vSet (validation set) in this iteration of the loop
+                Train, Valid = makeSplit(self.TV[self.TV["Maskf"]], subsets[i])
+                self.makeArrays(Train, Valid)
 
-            # Generating training and validation set arrays for this
-            # particular vSet (validation set) in this iteration of the loop
-            Train, Valid = makeSplit(
-                self.TV[self.TV["MaskCorrFit"]], subsets[i])
-            self.makeArrays(Train, Valid)
+                # Fit the GPR model to the validation set and predict to get
+                # fbar_s values for this validation set.
+                GP.fit(params)
+                GP.predict(self.Xvalid)
+                
+                # Load these fbar_s values into the fbar_s columns in the TV
+                # table. Note that we only have points corresponding to the subset
+                # mask (on this particular iteration) and so we create the index
+                # array which indexes the TV table accordingly.
+                index = self.TV[subsets[i]] & self.TV["Maskf"]
+                self.TV["fbar_s dX"][index] = self.fbar_s[:, 0]*u.mas
+                self.TV["fbar_s dY"][index] = self.fbar_s[:, 1]*u.mas
+            
+            elif fC:
+                # Generating training and validation set arrays for this
+                # particular vSet (validation set) in this iteration of the loop
+                Train, Valid = makeSplit(self.TV, subsets[i])
+                self.makeArrays(Train, Valid)
 
-            # Fit the GPR model to the validation set and predict to get
-            # fbar_s values for this validation set.
-            GP.fit(self.params)
-            GP.predict(self.Xvalid)
+                # Fit the GPR model to the validation set and predict to get
+                # fbar_s values for this validation set.
+                GP.fit(params)
+                GP.predict(self.Xvalid)
+                
+                # Load these fbar_s values into the fbar_s fC columns in the TV
+                # table. Note that we only have points corresponding to the subset
+                # mask (on this particular iteration) and so we create the index
+                # array which indexes the TV table accordingly.
+                index = self.TV[subsets[i]]
+                self.TV["fbar_s dX fC"][index] = self.fbar_s[:, 0]*u.mas
+                self.TV["fbar_s dY fC"][index] = self.fbar_s[:, 1]*u.mas
 
-            # Load these fbar_s values into the fbar_s columns in the TV
-            # table. Note that we only have points corresponding to the subset
-            # mask (on this particular iteration) and MaskCorrFit (from
-            # self.postFitCorr_sigmaClip) so we create the index array which
-            # indexes the TV table accordingly.
-            index = self.TV[subsets[i]] & self.TV["MaskCorrFit"]
-            self.TV["fbar_s dX"][index] = self.fbar_s[:, 0]*u.mas
-            self.TV["fbar_s dY"][index] = self.fbar_s[:, 1]*u.mas
+                # Perform the sigma clipping on this new set of residuals and add
+                # the mask to the MaskCorrFit column.
+                mask = stats.sigma_clip(
+                    self.fbar_s, sigma=self.nSigma, axis=0).mask
+                mask = ~np.logical_or(*mask.T)
+                self.TV["MaskCorrFit"][index] = mask
+                
+            else:
+                # Generating training and validation set arrays for this
+                # particular vSet (validation set) in this iteration of the loop
+                Train, Valid = makeSplit(
+                    self.TV[self.TV["MaskCorrFit"]], subsets[i])
+                self.makeArrays(Train, Valid)
 
-            # Perform the sigma clipping on this new set of residuals and add
-            # the mask to the MaskJackKnife column.
-            mask = stats.sigma_clip(
-                self.fbar_s, sigma=self.nSigma, axis=0).mask
-            mask = ~np.logical_or(*mask.T)
-            self.TV["MaskJackKnife"][index] = mask
+                # Fit the GPR model to the validation set and predict to get
+                # fbar_s values for this validation set.
+                GP.fit(params)
+                GP.predict(self.Xvalid)
+                
+                # Load these fbar_s values into the fbar_s columns in the TV
+                # table. Note that we only have points corresponding to the subset
+                # mask (on this particular iteration) and MaskCorrFit (from
+                # self.postFitCorr_sigmaClip) so we create the index array which
+                # indexes the TV table accordingly.
+                index = self.TV[subsets[i]] & self.TV["MaskCorrFit"]
+                self.TV["fbar_s dX"][index] = self.fbar_s[:, 0]*u.mas
+                self.TV["fbar_s dY"][index] = self.fbar_s[:, 1]*u.mas
 
-        # Create maskf which will index the TV table for all points that
-        # survived so far.
-        subsetMasks = \
-            self.TV["Subset A"] + \
-            self.TV["Subset B"] + \
-            self.TV["Subset C"] + \
-            self.TV["Subset D"] + \
-            self.TV["Subset E"]
-        sigmaclipMasks = self.TV["MaskJackKnife"] & self.TV["MaskCorrFit"]
-        maskf = subsetMasks & sigmaclipMasks
-        maskf = tb.Column(data=maskf, name="Maskf")
-        self.TV.add_column(maskf)
+                # Perform the sigma clipping on this new set of residuals and add
+                # the mask to the MaskJackKnife column.
+                mask = stats.sigma_clip(
+                    self.fbar_s, sigma=self.nSigma, axis=0).mask
+                mask = ~np.logical_or(*mask.T)
+                self.TV["MaskJackKnife"][index] = mask
 
-    def JackKnifeXi(self) -> tuple:
+        if (not fC) and (not nomask):
+            # Create maskf which will index the TV table for all points that
+            # survived so far.
+            subsetMasks = \
+                self.TV["Subset A"] + \
+                self.TV["Subset B"] + \
+                self.TV["Subset C"] + \
+                self.TV["Subset D"] + \
+                self.TV["Subset E"]
+            sigmaclipMasks = self.TV["MaskJackKnife"] & self.TV["MaskCorrFit"]
+            maskf = subsetMasks & sigmaclipMasks
+            maskf = tb.Column(data=maskf, name="Maskf")
+            self.TV.add_column(maskf)
+
+    def JackKnifeXi(self, fC: bool = False, rMax=0.02*u.deg) -> tuple:
         """
         The angle averaged 2pt correlation function of the jackknifed data.
 
@@ -820,7 +914,7 @@ class dataContainer(object):
         -------
             xi : tuple
                 xi_0.02 value and x/y errors for the raw data.
-            xi : tuple
+            xi2 : tuple
                 xi_0.02 value and x/y errors for the GPR subtracted data.
         """
 
@@ -841,12 +935,15 @@ class dataContainer(object):
             # GPRutils.getXi function.
             X = np.vstack([data["X"], data["Y"]]).T
             Y = np.vstack([data["dX"], data["dY"]]).T
-            Y2 = Y - np.vstack([data["fbar_s dX"], data["fbar_s dY"]]).T
+            if fC:
+                Y2 = Y - np.vstack([data["fbar_s dX fC"], data["fbar_s dY fC"]]).T
+            else:
+                Y2 = Y - np.vstack([data["fbar_s dX"], data["fbar_s dY"]]).T
 
             # Call getXi to find the pairs of points with separation less than
             # 0.02 deg
-            xi, Uerr, Verr, prs = getXi(X, Y)
-            xi2, Uerr2, Verr2, prs2 = getXi(X, Y2)
+            xi, Uerr, Verr, prs = getXi(X, Y, rMax=rMax)
+            xi2, Uerr2, Verr2, prs2 = getXi(X, Y2, rMax=rMax)
 
             prs_list.append(Y[prs])
             prs_list2.append(Y2[prs2])
@@ -894,7 +991,6 @@ class dataContainer(object):
         hdr["expNum"] = self.expNum
         hdr["band"] = self.band
         hdr["zoneDir"] = self.zoneDir
-        hdr["tile0"] = self.tile0
         hdr["earthRef"] = self.earthRef
         hdr["tileRef"] = self.tileRef
         hdr["tol"] = self.tol.value
@@ -921,6 +1017,15 @@ class dataContainer(object):
         hdr["xif"] = xi2[0].value
         hdr["xif_Xerr"] = xi2[1].value
         hdr["xif_Yerr"] = xi2[2].value
+        
+        # Add the jacknknifed xi_0.02 information (from fitCorr) to the header.
+        xi, xi2 = self.JackKnifeXi(fC=True)
+        hdr["fC_xi0"] = xi[0].value
+        hdr["fC_xi0_Xerr"] = xi[1].value
+        hdr["fC_xi0_Yerr"] = xi[2].value
+        hdr["fC_xif"] = xi2[0].value
+        hdr["fC_xif_Xerr"] = xi2[1].value
+        hdr["fC_xif_Yerr"] = xi2[2].value
 
         # Add the final kernel parameters to the header.
         hdr["var"] = self.params[0]
@@ -930,11 +1035,11 @@ class dataContainer(object):
         hdr["wind_y"] = self.params[4]
 
         # Add the kernel parmaters (from fitCorr) to the header.
-        hdr["fcvar"] = self.fitCorrParams[0]
-        hdr["fcouterScale"] = self.fitCorrParams[1]
-        hdr["fcdiameter"] = self.fitCorrParams[2]
-        hdr["fcwind_x"] = self.fitCorrParams[3]
-        hdr["fcwind_y"] = self.fitCorrParams[4]
+        hdr["fC_var"] = self.fitCorrParams[0]
+        hdr["fC_outerScale"] = self.fitCorrParams[1]
+        hdr["fC_diameter"] = self.fitCorrParams[2]
+        hdr["fC_wind_x"] = self.fitCorrParams[3]
+        hdr["fC_wind_y"] = self.fitCorrParams[4]
 
         # Initialize the HDU objects and the HDUList.
         prim_HDU = fits.PrimaryHDU(header=hdr)
@@ -986,7 +1091,6 @@ def loadFITS(FITSfile: str) -> dataContainer:
     dataC.expNum = hdul[0].header["expNum"]
     dataC.band = hdul[0].header["band"]
     dataC.zoneDir = hdul[0].header["zoneDir"]
-    dataC.tile0 = hdul[0].header["tile0"]
     dataC.earthRef = hdul[0].header["earthRef"]
     dataC.tileRef = hdul[0].header["tileRef"]
     dataC.tol = hdul[0].header["tol"]*u.arcsec
@@ -999,22 +1103,6 @@ def loadFITS(FITSfile: str) -> dataContainer:
     dataC.useRMS = hdul[0].header["useRMS"]
     dataC.curl = hdul[0].header["curl"]
 
-    # Load the final kernel parameters.
-    dataC.params = np.zeros(5)
-    dataC.params[0] = hdul[0].header["var"]
-    dataC.params[1] = hdul[0].header["outerScale"]
-    dataC.params[2] = hdul[0].header["diameter"]
-    dataC.params[3] = hdul[0].header["wind_x"]
-    dataC.params[4] = hdul[0].header["wind_y"]
-
-    # Load the kernel parameters from after the fitCorr step.
-    dataC.fitCorrParams = np.zeros(5)
-    dataC.fitCorrParams[0] = hdul[0].header["fcvar"]
-    dataC.fitCorrParams[1] = hdul[0].header["fcouterScale"]
-    dataC.fitCorrParams[2] = hdul[0].header["fcdiameter"]
-    dataC.fitCorrParams[3] = hdul[0].header["fcwind_x"]
-    dataC.fitCorrParams[4] = hdul[0].header["fcwind_y"]
-
     # Load in the TV set (training and validation sets).
     dataC.TV = tb.QTable(hdul[1].data)
     dataC.TV["X"].unit = u.deg
@@ -1025,12 +1113,44 @@ def loadFITS(FITSfile: str) -> dataContainer:
     dataC.TV["GAIA covariance"].unit = u.mas**2
     dataC.TV["fbar_s dX"].unit = u.mas
     dataC.TV["fbar_s dY"].unit = u.mas
+    
+    # Load the final kernel parameters.
+    dataC.params = np.zeros(5)
+    dataC.params[0] = hdul[0].header["var"]
+    dataC.params[1] = hdul[0].header["outerScale"]
+    dataC.params[2] = hdul[0].header["diameter"]
+    dataC.params[3] = hdul[0].header["wind_x"]
+    dataC.params[4] = hdul[0].header["wind_y"]
+
+    try:
+        # Load the kernel parameters from after the fitCorr step.
+        dataC.fitCorrParams = np.zeros(5)
+        dataC.fitCorrParams[0] = hdul[0].header["fC_var"]
+        dataC.fitCorrParams[1] = hdul[0].header["fC_outerScale"]
+        dataC.fitCorrParams[2] = hdul[0].header["fC_diameter"]
+        dataC.fitCorrParams[3] = hdul[0].header["fC_wind_x"]
+        dataC.fitCorrParams[4] = hdul[0].header["fC_wind_y"]
+        dataC.TV["fbar_s dX fC"].unit = u.mas
+        dataC.TV["fbar_s dY fC"].unit = u.mas
+    except Exception:
+        # Load the kernel parameters from after the fitCorr step.
+        # Use the old style of key.
+        dataC.fitCorrParams = np.zeros(5)
+        dataC.fitCorrParams[0] = hdul[0].header["fcvar"]
+        dataC.fitCorrParams[1] = hdul[0].header["fcouterScale"]
+        dataC.fitCorrParams[2] = hdul[0].header["fcdiameter"]
+        dataC.fitCorrParams[3] = hdul[0].header["fcwind_x"]
+        dataC.fitCorrParams[4] = hdul[0].header["fcwind_y"]
 
     # Load in the prediction set.
     dataC.Pred = tb.QTable(hdul[2].data)
     dataC.Pred["X"].unit = u.deg
     dataC.Pred["Y"].unit = u.deg
     dataC.Pred["DES variance"].unit = u.mas**2
+    
+    Train, Valid = makeSplit(dataC.TV, dataC.vSet)
+    dataC.makeArrays(Train, Valid)
+    dataC.arr = np.zeros(len(dataC.TV)).astype(bool)
 
     # Return the dataContainer object
     return dataC
@@ -1135,7 +1255,7 @@ def getXi(
     Y: np.ndarray,
     rMax: u.deg = 0.02*u.deg,
     rMin: u.mas = 5*u.mas
-        ) -> tuple:
+        ):
     """
     Calculates angle-averaged 2pt correlation function.
 
@@ -1424,6 +1544,8 @@ def printParams(
         The name of the figure-of-merit to be printed as a column header.
         header must be True.
     file : str
+    
+    XXX
     """
 
     # If you want to print column headers.
@@ -1447,7 +1569,7 @@ def printParams(
         # Add the figure-of-merit column.
         if FoM is not None:
             params = np.insert(params, 0, FoM)
-
+            
         # Form the line that will be printed.
         line = "".join([f"{np.round(param, 7):<15}" for param in params])
 
@@ -1465,7 +1587,7 @@ def printParams(
 def calcPixelGrid(
     x: u.deg, y: u.deg, dx: u.mas, dy: u.mas, err: u.mas,
     minPoints: int = 100, pixelsPerBin: int = 500, maxErr: u.mas = 50*u.mas
-        ) -> tuple:
+        ):
     """
     Calculates a pixel grid to make a weighted and binned 2d vector diagram.
 
@@ -1571,7 +1693,7 @@ def calcPixelGrid(
 
     # Converts from standard deviation to 1/variance
     # Watch out for how np.where handles units.
-    weight = np.where(err.value > 0, err.value**-2, 0).value
+    weight = np.where(err.value > 0, err.value**-2, 0)
 
     # ???
     totalBinGridSize = binGridSize_x * binGridSize_y
@@ -1633,7 +1755,7 @@ def calcPixelGrid(
 @u.quantity_input
 def calcDivCurl(
     x: u.deg, y: u.deg, dx: u.mas, dy: u.mas
-        ) -> tuple:
+        ):
     """
     Calculate divergence and curl of the given vector field.
 
@@ -1713,7 +1835,7 @@ def calcCorrelation(
     x: u.deg, y: u.deg, dx: u.mas, dy: u.mas,
     rmin: u.arcsec = 5*u.arcsec, rmax: u.arcsec = 1.5*u.deg,
     dlogr: float = 0.05
-        ) -> tuple:
+        ):
     """
     Produce angle-averaged 2-point correlation functions of astrometric error.
 
@@ -1846,7 +1968,7 @@ def calcCorrelation(
 def calcCorrelation2D(
     x: u.deg, y: u.deg, dx: u.mas, dy: u.mas,
     rmax: u.deg = 1*u.deg, nBins: int = 250
-        ) -> tuple:
+        ):
     """
     Produce 2d 2-point correlation functions of an astrometric residual field.
 
