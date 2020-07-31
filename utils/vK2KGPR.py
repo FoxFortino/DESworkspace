@@ -11,8 +11,6 @@ import numpy as np
 import astropy.units as u
 import scipy.optimize as opt
 
-from IPython import embed
-
 
 class vonKarman2KernelGPR(object):
     """
@@ -21,8 +19,6 @@ class vonKarman2KernelGPR(object):
     This class performs GPR on a 2D dataset (2D input values and 2D target
     values) using a kernel function based on the von Karman model of
     atmospheric turbulence.
-
-
     """
 
     def __init__(
@@ -265,20 +261,14 @@ class vonKarman2KernelGPR(object):
                 self.dC.Etrain_GAIA, self.dC.Etrain_DES,
                 useRMS=self.dC.useRMS, curl=True)
 
-            # # Perform cholesky decomposition.
-            # L = np.linalg.cholesky(K + W_GAIA + W_DES)
-
-            # # Calculate alpha, which is an intermediate step in finding the
-            # # posterior predictive mean (fbar_s). This is useful because if
-            # # you want to use the model to predict on multiple new values at
-            # # different times then you only have to do this once as long as
-            # # you save this value, alpha.
-            # self.alpha = np.linalg.solve(L, GPRutils.flat(self.dC.Ytrain))
-            # self.alpha = np.linalg.solve(L.T, self.alpha)
-            
-            # Try using cho_factor and cho_solve.
+            # Calculate alpha, which is an intermediate step in finding the
+            # posterior predictive mean (fbar_s). This is useful because if
+            # you want to use the model to predict on multiple new values at
+            # different times then you only have to do this once as long as
+            # you save this value, alpha.
             cho_factor = scipy.linalg.cho_factor(K + W_GAIA + W_DES)
-            self.alpha = scipy.linalg.cho_solve(cho_factor, GPRutils.flat(self.dC.Ytrain))
+            self.alpha = scipy.linalg.cho_solve(
+                cho_factor, GPRutils.flat(self.dC.Ytrain))
 
         # If you don't want to take advantage of the curl-free nature of the
         # turbulence field, then you will effectively have two separation GPR
@@ -294,23 +284,14 @@ class vonKarman2KernelGPR(object):
                 self.dC.Etrain_GAIA, self.dC.Etrain_DES,
                 useRMS=self.dC.useRMS)
 
-            # # Perform the cholesky decomposition for both models.
-            # Lu = np.linalg.cholesky(Ku + Wu_GAIA + Wu_DES)
-            # Lv = np.linalg.cholesky(Kv + Wv_GAIA + Wv_DES)
-
-            # # Calculate alpha for each model.
-            # self.alpha_u = np.linalg.solve(Lu, self.dC.Ytrain[:, 0])
-            # self.alpha_v = np.linalg.solve(Lv, self.dC.Ytrain[:, 1])
-
-            # self.alpha_u = np.linalg.solve(Lu.T, self.alpha_u)
-            # self.alpha_v = np.linalg.solve(Lv.T, self.alpha_v)
-            
             # Try using cho_factor and cho_solve.
             cho_factor_u = scipy.linalg.cho_factor(Ku + Wu_GAIA + Wu_DES)
-            self.alpha_u = scipy.linalg.cho_solve(cho_factor_u, self.dC.Ytrain[:, 0])
-            
+            self.alpha_u = scipy.linalg.cho_solve(
+                cho_factor_u, self.dC.Ytrain[:, 0])
+
             cho_factor_v = scipy.linalg.cho_factor(Kv + Wv_GAIA + Wv_DES)
-            self.alpha_v = scipy.linalg.cho_solve(cho_factor_v, self.dC.Ytrain[:, 1])
+            self.alpha_v = scipy.linalg.cho_solve(
+                cho_factor_v, self.dC.Ytrain[:, 1])
 
     def predict(self, X: np.ndarray) -> None:
         """
@@ -404,10 +385,11 @@ class vonKarman2KernelGPR(object):
     def optimize(
         self,
         v0: np.ndarray = None,
-        xtol=2.5,
-        ftol=0.025,
-        maxfun=150,
-        func=None) -> None:
+        xtol: float = 2.5,
+        ftol: float = 0.025,
+        maxfun: int = 150,
+        func: object = None
+            ) -> None:
         """
         Call the Nelder-Mead optimizer routine to optimze the model.
 
@@ -418,6 +400,18 @@ class vonKarman2KernelGPR(object):
         ---------
         v0 : np.ndarray
             Define an initial guess of the kernel parameters for the optimizer.
+        xtol : float
+            Nelder-Mead tolerance paramter. AFAIK, it is max "size" of the
+            simplex that the optimizer will consider to be optimized.
+        ftol : float
+            Nelder-Mead tolerance parameter. AFAIK, it is the max difference
+            in figure of merit values between each vertex of the simplex that
+            the optimizer will consider to be optimized.
+        maxfun : int
+            Maximum number of Nelder-Mead function evaluations.
+        func : object
+            If you want to use a different figure of merit retrieval function
+            than GP.figureOfMerit, then use it here.
         """
         # We use the output of self.fitCorr as the initial guess. This is the
         # whole purpose of the fitCorr routine. You can optionally only use
