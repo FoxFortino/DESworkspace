@@ -264,14 +264,19 @@ def main(
             approx_grad = True
 
             # Bounds generally chosen based on physical intution for the
-            # system.
+            # system. The upper bound of 3 deg for the last three parameters is
+            # because not only have we rarely seen values greater than this,
+            # but also 3 deg is the approxmate diameter of the DECam focal
+            # plane. While values larger than this are possible, it is less
+            # likely and they matter less in terms of figure of merit
+            # minimzation.
             # Also we divide by norm to normalize the bounds.
             bounds = (np.array([
-                [0.1, 1000],  # K variance [mas^2]
+                [0.1, 2000],  # K variance [mas^2]
                 [0.1, 10],  # Outer Scale [deg]
-                [0.01, 1],  # Diameter [deg]
-                [-1, 1],  # Wind_x [deg]
-                [-1, 1]  # Wind_y [deg]
+                [0.01, 3],  # Diameter [deg]
+                [-3, 3],  # Wind_x [deg]
+                [-3, 3]  # Wind_y [deg]
             ]).T / norm).T
 
             # According to the documentation for scipy.optimize.fmin_l_bfgs_b,
