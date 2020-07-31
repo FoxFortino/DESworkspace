@@ -145,8 +145,8 @@ def findTiles(
 
     # Check that there is at least one tile in the zoneDir.
     if len(tilefiles) == 0:
-        print(f"There are no known tiles for exposure {expNum} in {zoneDir}.")
-        return []
+        raise Exception(f"There are no known tiles for exposure {expNum} "
+                        f"in {zoneDir}.")
 
     # Check if tiles should be confimed.
     if not confirmTiles:
