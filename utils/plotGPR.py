@@ -1,10 +1,145 @@
 import os
 
 import GPRutils
+import DESutils
 
 import numpy as np
 import astropy.units as u
 import matplotlib.pyplot as plt
+
+class AggregatePlots(object):
+
+    def __init__(self, FITSfiles, rMax=0.5*u.arcmin):
+        """
+        Do all of the parsing of the outfiles and calculating of xi0, etc, in the init method or maybe another method. Then when you call the plotting routines, you can specify which  bands you want included in the plot. However, when calculating the mean value for a plot, still show a different label for each band. And if the mean/median is plotted on the plot normally, don't plot these if multiple bands are plotted
+
+
+        Put the xiBA and avgxi plots here. Timexi if I feel like it, but probably won't be using that one. Remove horizontal lines from avgxi plot. Normalize avgxi plot by dividing by xi0?
+
+        Do a histogram plot of the RMS values (like in timexi) for before after.
+
+        Do a histogram plot of the five kernel parameters. Again, split it by band. Somehow also plot wrt to xi0 (or xif, but a relationship to xi0 will make sense because the parameters should reflect the atmospheric turbulence conditions that should be described by xi0)
+        """
+        self.FITSfiles = FITSfiles
+        self.DES_PASSBANDS = ["u", "g", "r", "i", "z", "Y"]
+        self.DES_COLORS = {
+            "u": "#56b4e9",
+            "g": "#008060",
+            "r": "#ff4000",
+            "i": "#850000",
+            "z": "#6600cc",
+            "Y": "#000000"
+        }
+
+        self.xi0_raw = {band: [] for band in self.DES_PASSBANDS}
+        self.xi0err_raw = {band: [] for band in self.DES_PASSBANDS}
+
+        self.xi0_GPR = {band: [] for band in self.DES_PASSBANDS}
+        self.xi0err_GPR = {band: [] for band in self.DES_PASSBANDS}
+
+        self.red = {band: [] for band in self.DES_PASSBANDS}
+        self.rederr = {band: [] for band in self.DES_PASSBANDS}
+
+        self.xiplus_raw = {band: [] for band in self.DES_PASSBANDS}
+        self.xiplus_GPR = {band: [] for band in self.DES_PASSBANDS}
+        self.r = {band: [] for band in self.DES_PASSBANDS}
+
+        self.RMS_raw = {band: [] for band in self.DES_PASSBANDS}
+        self.RMSerr_raw = {band: [] for band in self.DES_PASSBANDS}
+
+        self.RMS_GPR = {band: [] for band in self.DES_PASSBANDS}
+        self.RMSerr_GPR = {band: [] for band in self.DES_PASSBANDS}
+
+        self.observationTime = {band: [] for band in self.DES_PASSBANDS}
+
+        self.Kvariance = {band: [] for band in self.DES_PASSBANDS}
+        self.OuterScale = {band: [] for band in self.DES_PASSBANDS}
+        self.Diameter = {band: [] for band in self.DES_PASSBANDS}
+        self.Wind_X = {band: [] for band in self.DES_PASSBANDS}
+        self.Wind_Y = {band: [] for band in self.DES_PASSBANDS}
+
+        self.totalTimes = {band: [] for band in self.DES_PASSBANDS}
+        self.avgGPTimes = {band: [] for band in self.DES_PASSBANDS}
+        self.nStepsfC = {band: [] for band in self.DES_PASSBANDS}
+        self.nSteps1 = {band: [] for band in self.DES_PASSBANDS}
+        self.nSteps2 = {band: [] for band in self.DES_PASSBANDS}
+        self.nStepsGP = {band: [] for band in self.DES_PASSBANDS}
+        
+#         self.stardensitys
+
+        for FITSfile in self.FITSfiles:
+            dC = GPRutils.loadFITS(FITSfile)
+
+            obs = GPRutils.dataContainer().load(dC.expNum, returnObs=True)
+            self.observationTime[dC.band].append(obs)
+
+            self.Kvariance[dC.band].append(dC.params[0])
+            self.OuterScale[dC.band].append(dC.params[1])
+            self.Diameter[dC.band].append(dC.params[2])
+            self.Wind_X[dC.band].append(dC.params[3])
+            self.Wind_Y[dC.band].append(dC.params[4])
+
+            out = DESutils.parseOutfile(dC.OUTfile)
+            if out.finished:
+                self.totalTimes[dC.band].append(out.totalTime.value)
+                self.avgGPTimes[dC.band].append(out.avgGPTime.value)
+                self.nStepsfC[dC.band].append(out.nfC)
+                self.nSteps1[dC.band].append(out.nOpt1)
+                self.nSteps2[dC.band].append(out.nOpt2)
+                self.nStepsGP[dC.band].append(out.nGP)
+            else:
+                if out.LinAlgErr:
+                    print(FITSfile)
+                    print(out.LinAlgErr_params)
+                continue
+
+            xi1, xi2 = dC.JackKnifeXi(rMax=rMax)
+            xi0_raw, xi0_GPR = np.abs(xi1[0].value), np.abs(xi2[0].value)
+            xi0Xerr_raw, xi0Xerr_GPR = xi1[1].value, xi2[1].value
+            xi0Yerr_raw, xi0Yerr_GPR = xi1[2].value, xi2[2].value
+
+            xi0err_raw = np.sqrt(xi0Xerr_raw**2 + xi0Yerr_raw**2).value
+            xi0err_GPR = np.sqrt(xi0Xerr_GPR**2 + xi0Yerr_GPR**2).value
+
+            red = (xi0_raw / xi0_GPR).value
+            err = ((xi0err_raw/xi0_raw)**2 + (xi0err_GPR/xi0_GPR)**2)
+            rederr = np.sqrt(err * red**2).value
+
+            self.xi0_raw[dC.band].append(xi0_raw)
+            self.xi0err_raw[dC.band].append(xi0err_raw)
+
+            self.xi0_GPR[dC.band].append(xi0_GPR)
+            self.xi0err_GPR[dC.band].append(xi0err_GPR)
+
+            self.red[dC.band].append(red)
+            self.rederr[dC.band].append(rederr)
+
+            SUBSETS = ["Subset A", "Subset B", "Subset C", "Subset D", "Subset E"]
+            for subset in SUBSETS:
+                mask = dC.TV["Maskf"] & dC.TV[subset]
+
+                fbar_s_x = dC.TV[mask]["fbar_s dX"].to(u.mas)
+                fbar_s_y = dC.TV[mask]["fbar_s dY"].to(u.mas)
+
+                x = dC.TV[mask]["X"].to(u.deg)
+                y = dC.TV[mask]["Y"].to(u.deg)
+
+                dx = dC.TV[mask]["dX"].to(u.mas)
+                dy = dC.TV[mask]["dY"].to(u.mas)
+
+                dx2 = dx - fbar_s_x
+                dy2 = dy - fbar_s_y
+
+                result_raw = GPRutils.calcCorrelation(x, y, dx, dy)
+                self.xiplus_raw[dC.band].append(result_raw[1])
+                r_raw = np.exp(result_raw[0])
+
+                result_GPR = GPRutils.calcCorrelation(x, y, dx2, dy2)
+                self.xiplus_GPR[dC.band].append(result_GPR[1])
+                r_GPR = np.exp(result_GPR[0])
+
+                r = np.nanmean(np.vstack([r_raw, r_GPR]), axis=0)
+                self.r[dC.band].append(r)
 
 def AstrometricResiduals(
     x, y, dx, dy, err,
