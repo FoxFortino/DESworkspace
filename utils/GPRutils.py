@@ -1076,6 +1076,8 @@ def loadFITS(FITSfile: str) -> dataContainer:
     # Initialize the dataContainer object and load the header information.
     # First load set the kwarg metadata.
     dataC = dataContainer()
+    dataC.FITSfile = FITSfile
+    dataC.OUTfile = os.path.splitext(FITSfile)[0]+".out"
     dataC.header = hdul[0].header
     dataC.expNum = hdul[0].header["expNum"]
     dataC.band = hdul[0].header["band"]
