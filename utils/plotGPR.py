@@ -103,12 +103,12 @@ class AggregatePlots(object):
             xi0Xerr_raw, xi0Xerr_GPR = xi1[1].value, xi2[1].value
             xi0Yerr_raw, xi0Yerr_GPR = xi1[2].value, xi2[2].value
 
-            xi0err_raw = np.sqrt(xi0Xerr_raw**2 + xi0Yerr_raw**2).value
-            xi0err_GPR = np.sqrt(xi0Xerr_GPR**2 + xi0Yerr_GPR**2).value
+            xi0err_raw = np.sqrt(xi0Xerr_raw**2 + xi0Yerr_raw**2)
+            xi0err_GPR = np.sqrt(xi0Xerr_GPR**2 + xi0Yerr_GPR**2)
 
-            red = (xi0_raw / xi0_GPR).value
+            red = (xi0_raw / xi0_GPR)
             err = ((xi0err_raw/xi0_raw)**2 + (xi0err_GPR/xi0_GPR)**2)
-            rederr = np.sqrt(err * red**2).value
+            rederr = np.sqrt(err * red**2)
 
             RMS_raw = np.sqrt(xi0_raw / 2)
             RMSerr_raw = np.abs(RMS_raw / (2 * xi0_raw)) * xi0err_raw
@@ -131,7 +131,9 @@ class AggregatePlots(object):
             self.RMS_GPR[dC.band].append(RMS_GPR)
             self.RMSerr_GPR[dC.band].append(RMSerr_GPR)
 
-        def calcArrs(self):
+    def calcArrs(self):
+        for FITSfile in self.FITSfiles:
+            dC = GPRutils.loadFITS(FITSfile)
             for subset in SUBSETS:
                 mask = dC.TV["Maskf"] & dC.TV[subset]
 
