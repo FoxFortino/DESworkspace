@@ -21,9 +21,8 @@ parser = argparse.ArgumentParser(
 
 parser.add_argument(
     "expFile",
-    nargs=1,
+    nargs="?",
     type=str,
-    required=True,
     help="The existing directory you want to store the output of GPR to.")
 parser.add_argument(
     "-r", "--RMS",
@@ -62,6 +61,11 @@ parser.add_argument(
     help="The DES passband you want to analyze an exposure from. "
          "Must be used with -s or -s and -f")
 parser.add_argument(
+    "-z", "--zone",
+    nargs="?",
+    type=int,
+    help="What DES zone to get the bandDict or list of complete exposure for.")
+parser.add_argument(
     "-s", "--start",
     nargs="?",
     type=int,
@@ -99,7 +103,7 @@ parser.add_argument(
     type=float,
     help="Remove all DES sources with variance less than this value in mas^2.")
 parser.add_argument(
-    "--mas",
+    "--max",
     nargs="?",
     default=np.inf,
     type=float,
@@ -110,7 +114,7 @@ parser.add_argument(
     nargs="?",
     default=1,
     type=float,
-    help="The fraction (between 0 and 1) of data total data to include in "
+    help="The fraction (between 0 and 1) of total data to include in "
          "alaysis.")
 args = parser.parse_args()
 
@@ -427,7 +431,14 @@ if __name__ == '__main__':
         # If args.eris is True, then take exposures from the DES Zone 134
         # bandDict.
         else:
-            exps = DESutils.bandDict[args.band]
+            # If args.zone isn't specified, assume zone134, for which we have
+            # a hardcoded bandDict for.
+            if args.zone is None:
+                exps = DESutils.bandDict[args.band]
+            else:
+                zoneDir = os.path.join("/data3/garyb/tno/y6", "zone"+str(args.zone))
+                ce, bd = DESutils.createBandDict(zoneDir)
+                exps = bd[args.band]
 
         # If args.start and args.finish are used, sort out the slice of the
         # exposure list here.
