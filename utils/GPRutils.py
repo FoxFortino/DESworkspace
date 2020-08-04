@@ -22,6 +22,8 @@ import astropy.stats as stats
 from astropy.time import Time
 from scipy.spatial.ckdtree import cKDTree
 
+from IPython import embed
+
 
 class dataContainer(object):
     """
@@ -70,6 +72,11 @@ class dataContainer(object):
         residual field. Second panel is the GPR's estimate of the observed
         residual field. Third panel is the subtraction of the observed
         residual field from the GPR's estimate.
+        
+        Arugments
+        ---------
+        OUTfile : str
+            Name of the .out file that was created along with the .fits file.
 
         Keyword Arguments
         -----------------
@@ -78,56 +85,76 @@ class dataContainer(object):
             much faster if you only want to know the xi_0.02 and kernel
             parameters.
         """
+#         out = DESutils.parseOutfile(OUTfile)
+#         if not out.finished:
+#             print(f"{OUTfile} not finished.")
+#             return
 
         # Print a simply header.
         exp_band = f"{self.expNum} {self.band}"
         print(f"#####{exp_band:-^20}#####")
-
+#         print(f"Total Time: {out.totalTime:.3f}")
+#         print(f"Average GP Calculation Tmie: {out.avgGPTime:.3f}")
+        
+#         print("-"*30)
         # This is in a try-except block because some some FITS files won't
         # have this information because they are old. Eventually the
         # try-except block here won't be necessary.
-        try:
-            print("Fitted von Kármán kernel parameters:")
-            printParams(self.fitCorrParams, header=True, printing=True)
-            printParams(self.fitCorrParams, printing=True)
-            xi0 = self.header["fC_xi0"]
-            Xerr = self.header["fC_xi0_Xerr"]
-            Yerr = self.header["fC_xi0_Yerr"]
-            xi0err = np.sqrt(Xerr**2 + Yerr**2)
-            print(f"xi0: {xi0:.3f} ± {xi0err:.3f}")
+        print("  Fitted von Kármán kernel parameters:")
+        printParams(self.fitCorrParams, header=True, printing=True)
+        printParams(self.fitCorrParams, printing=True)
+        
+#         print("-"*30)
+#         print(f"  Correlation Fitting Time: {out.fitCorrTime:.3f}, {out.nfC} steps")
 
-            xif = self.header["fC_xif"]
-            Xerr = self.header["fC_xif_Xerr"]
-            Yerr = self.header["fC_xif_Yerr"]
-            xiferr = np.sqrt(Xerr**2 + Yerr**2)
-            print(f"xif: {xif:.3f} ± {xiferr:.3f}")
+#         N = len(self.TV[self.TV["MaskCorrFit"]])
+#         starDensity = (N / (3*u.deg**2)).to(u.arcmin**-2)
+#         print(f"  Star Density: {starDensity:.3f}")
 
-            red = xi0/xif
-            rederr = np.sqrt(((xi0err/xi0)**2 + (xiferr/xif)**2) * red**2)
-            print(f"Reduction: {red:.3f} ± {rederr:.3f}")
-            print()
-        except Exception:
-            print()
+        xi0 = self.header["fC_xi0"]
+        Xerr = self.header["fC_xi0_Xerr"]
+        Yerr = self.header["fC_xi0_Yerr"]
+        xi0err = np.sqrt(Xerr**2 + Yerr**2)
+        print(f"    xi0: {xi0:.3f} ± {xi0err:.3f}")
 
-        print("Final von Kármán kernel parameters:")
+        xif = self.header["fC_xif"]
+        Xerr = self.header["fC_xif_Xerr"]
+        Yerr = self.header["fC_xif_Yerr"]
+        xiferr = np.sqrt(Xerr**2 + Yerr**2)
+        print(f"    xif: {xif:.3f} ± {xiferr:.3f}")
+
+        red = xi0/xif
+        rederr = np.sqrt(((xi0err/xi0)**2 + (xiferr/xif)**2) * red**2)
+        print(f"    Reduction: {red:.3f} ± {rederr:.3f}")
+        
+#         print("-"*30)
+        print("  Final von Kármán kernel parameters:")
         printParams(self.params, header=True, printing=True)
         printParams(self.params, printing=True)
+#         print("-"*30)
+#         print(f"  Optmization Time: {out.optTime:.3f}, {out.nGP} ({out.nOpt1} {out.nOpt2}) steps")
+        
+#         N = len(self.TV[self.TV["MaskJackKnife"]])
+#         starDensity = (N / (3*u.deg**2)).to(u.arcmin**-2)
+#         print(f"  Star Density: {starDensity:.3f}")
+        
         xi0 = self.header["xi0"]
         Xerr = self.header["xi0_Xerr"]
         Yerr = self.header["xi0_Yerr"]
         xi0err = np.sqrt(Xerr**2 + Yerr**2)
-        print(f"xi0: {xi0:.3f} ± {xi0err:.3f}")
+        print(f"    xi0: {xi0:.3f} ± {xi0err:.3f}")
 
         xif = self.header["xif"]
         Xerr = self.header["xif_Xerr"]
         Yerr = self.header["xif_Yerr"]
         xiferr = np.sqrt(Xerr**2 + Yerr**2)
-        print(f"xif: {xif:.3f} ± {xiferr:.3f}")
+        print(f"    xif: {xif:.3f} ± {xiferr:.3f}")
 
         red = xi0/xif
         rederr = np.sqrt(((xi0err/xi0)**2 + (xiferr/xif)**2) * red**2)
-        print(f"Reduction: {red:.3f} ± {rederr:.3f}")
+        print(f"    Reduction: {red:.3f} ± {rederr:.3f}")
         print()
+
 
         if not plot:
             return
@@ -211,6 +238,7 @@ class dataContainer(object):
         plotGPR.Correlation(
             x, y, dx, dy,
             x2=x2, y2=y2, dx2=dx2, dy2=dy2,
+            xiplus_ON=True,
             exposure=self.expNum,
             ylim=(None, None))
 
@@ -806,31 +834,32 @@ class dataContainer(object):
                     self.fbar_s, sigma=self.nSigma, axis=0).mask
                 mask = ~np.logical_or(*mask.T)
                 self.TV["MaskJackKnife"][index] = mask
-
-                # Additionally, if fC and nomask are False, then we are at the
-                # end of optimization, so we want to create the Maskf mask.
-                # This mask will be able to index all of the points that have
-                # survived the three rounds of sigma clipping (from Mask0,
-                # MaskCorrFit, and MaskJackKnife).
-                subsetMasks = \
-                    self.TV["Subset A"] + \
-                    self.TV["Subset B"] + \
-                    self.TV["Subset C"] + \
-                    self.TV["Subset D"] + \
-                    self.TV["Subset E"]
-                sigmaclipMasks = \
-                    self.TV["MaskJackKnife"] & \
-                    self.TV["MaskCorrFit"]
-                maskf = subsetMasks & sigmaclipMasks
-                maskf = tb.Column(data=maskf, name="Maskf")
-                self.TV.add_column(maskf)
+                
+        if (not fC) and (not nomask):
+            # Additionally, if fC and nomask are False, then we are at the
+            # end of optimization, so we want to create the Maskf mask.
+            # This mask will be able to index all of the points that have
+            # survived the three rounds of sigma clipping (from Mask0,
+            # MaskCorrFit, and MaskJackKnife).
+            subsetMasks = \
+                self.TV["Subset A"] + \
+                self.TV["Subset B"] + \
+                self.TV["Subset C"] + \
+                self.TV["Subset D"] + \
+                self.TV["Subset E"]
+            sigmaclipMasks = \
+                self.TV["MaskJackKnife"] & \
+                self.TV["MaskCorrFit"]
+            maskf = subsetMasks & sigmaclipMasks
+            maskf = tb.Column(data=maskf, name="Maskf")
+            self.TV.add_column(maskf)
 
     @u.quantity_input
     def JackKnifeXi(
         self,
         fC: bool = False,
         rMax: u.deg = 0.02*u.deg
-            ) -> tuple:
+            ):
         """
         The angle averaged 2pt correlation function of the jackknifed data.
 
@@ -892,7 +921,7 @@ class dataContainer(object):
             # GPRutils.getXi function.
             X = np.vstack([data["X"], data["Y"]]).T
             Y = np.vstack([data["dX"], data["dY"]]).T
-            Y2 = Y
+            Y2 = Y.copy()
 
             # If fC is True, take the data that was jackknifed with the
             # fitCorr params. Else, take the data that was jacknifed with the
@@ -925,7 +954,7 @@ class dataContainer(object):
         # Package up the results nicely.
         xi = (xiplus, err[0], err[1])
         xi2 = (xiplus2, err2[0], err2[1])
-
+        
         return xi, xi2
 
     def saveFITS(self, savePath: str, overwrite: bool = True) -> None:
