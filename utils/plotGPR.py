@@ -6,6 +6,7 @@ import DESutils
 import numpy as np
 import astropy.units as u
 import matplotlib.pyplot as plt
+plt.style.use('~/GitHub/custom-matplotlib/custom.mplstyle')
 
 
 SUBSETS = ["Subset A", "Subset B", "Subset C", "Subset D", "Subset E"]
@@ -34,6 +35,8 @@ class AggregatePlots(object):
         Do a histogram plot of the five kernel parameters. Again, split it by band. Somehow also plot wrt to xi0 (or xif, but a relationship to xi0 will make sense because the parameters should reflect the atmospheric turbulence conditions that should be described by xi0)
         """
         self.FITSfiles = FITSfiles
+
+        self.expNums = {band: [] for band in DES_PASSBANDS}
 
         self.observationTime = {band: [] for band in DES_PASSBANDS}
 
@@ -70,6 +73,8 @@ class AggregatePlots(object):
     def calcVals(self, rMax=0.5*u.arcmin):
         for FITSfile in self.FITSfiles:
             dC = GPRutils.loadFITS(FITSfile)
+
+            self.expNums[dC.band].append(dC.expNum)
 
             obs = GPRutils.dataContainer().load(dC.expNum, returnObs=True)
             self.observationTime[dC.band].append(obs)
@@ -157,6 +162,92 @@ class AggregatePlots(object):
 
                 r = np.nanmean(np.vstack([r_raw, r_GPR]), axis=0)
                 self.r[dC.band].append(r)
+
+    def xiBA(
+        self,
+        annotate=False,
+        save=None
+            ):
+        framealpha = 0.5
+
+        plt.figure(figsize=(20, 10))
+
+        bandHandles = []
+        for band in DES_PASSBANDS:
+
+            if len(self.observationTime[band]) == 0:
+                continue
+
+            for i in range(len(self.FITSfiles)):
+                xi0_raw = self.xi0_raw[band][i]
+                xi0_GPR = self.xi0_GPR[band][i]
+
+                xi0err_raw = self.xi0err_raw[band][i]
+                xi0err_GPR = self.xi0err_GPR[band][i]
+
+            plt.errorbar(
+                xi0_raw, xi0_GPR,
+                xerr=xi0err_raw, yerr=xi0err_GPR,
+                color=DES_COLORS[band], marker=".",
+                linewidth=0.5, capsize=1)
+            if annotate:
+                plt.annotate(
+                    f"{self.expNums[i]}",
+                    (xi0_raw, xi0_GPR),
+                    fontsize=10)
+
+            bandHandle = plt.scatter(
+                -1, 0,
+                alpha=1,
+                color=DES_COLORS["g"],
+                label=f"DES Passband {band}\n"
+                      f"Mean: {np.mean(self.red[band]):.3f}")
+            bandHandles.append(bandHandle)
+
+        bandLegend = plt.legend(
+            handles=bandHandles,
+            loc="upper right",
+            framealpha=framealpha)
+        plt.gca().add_artist(bandLegend)
+
+        plt.ylim((0, None))
+        plt.xlim((0, None))
+
+        x = np.linspace(0, 5000, 2)
+
+        noChange = plt.plot(
+            x, x,
+            "k:",
+            label="No Change")[0]
+
+        red5 = plt.plot(
+            x, x/5,
+            c="tab:blue", ls=":",
+            label="5x Reduction")[0]
+
+        red10 = plt.plot(
+            x, x/10,
+            c="tab:orange",
+            ls=":",
+            label="10x Reduction")[0]
+
+        red20 = plt.plot(
+            x, x/20,
+            c="tab:green", ls=":",
+            label="20x Reduction")[0]
+
+        refLegend = plt.legend(
+            handles=[noChange, red5, red10, red20],
+            loc="upper left",
+            framealpha=framealpha)
+        plt.gca().add_artist(refLegend)
+
+        plt.xlabel(r"$\xi_{0}$ Raw [mas$^2$]")
+        plt.ylabel(r"$\xi_{0}$ GPR Model Subtracted [mas$^2$]")
+
+        if save is not None:
+            plt.savefig(save)
+        plt.show()
 
 
 def AstrometricResiduals(
