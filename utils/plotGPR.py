@@ -7,9 +7,22 @@ import numpy as np
 import astropy.units as u
 import matplotlib.pyplot as plt
 
+
+SUBSETS = ["Subset A", "Subset B", "Subset C", "Subset D", "Subset E"]
+DES_PASSBANDS = ["u", "g", "r", "i", "z", "Y"]
+DES_COLORS = {
+    "u": "#56b4e9",
+    "g": "#008060",
+    "r": "#ff4000",
+    "i": "#850000",
+    "z": "#6600cc",
+    "Y": "#000000"
+    }
+
+
 class AggregatePlots(object):
 
-    def __init__(self, FITSfiles, rMax=0.5*u.arcmin):
+    def __init__(self, FITSfiles):
         """
         Do all of the parsing of the outfiles and calculating of xi0, etc, in the init method or maybe another method. Then when you call the plotting routines, you can specify which  bands you want included in the plot. However, when calculating the mean value for a plot, still show a different label for each band. And if the mean/median is plotted on the plot normally, don't plot these if multiple bands are plotted
 
@@ -21,57 +34,49 @@ class AggregatePlots(object):
         Do a histogram plot of the five kernel parameters. Again, split it by band. Somehow also plot wrt to xi0 (or xif, but a relationship to xi0 will make sense because the parameters should reflect the atmospheric turbulence conditions that should be described by xi0)
         """
         self.FITSfiles = FITSfiles
-        self.DES_PASSBANDS = ["u", "g", "r", "i", "z", "Y"]
-        self.DES_COLORS = {
-            "u": "#56b4e9",
-            "g": "#008060",
-            "r": "#ff4000",
-            "i": "#850000",
-            "z": "#6600cc",
-            "Y": "#000000"
-        }
 
-        self.xi0_raw = {band: [] for band in self.DES_PASSBANDS}
-        self.xi0err_raw = {band: [] for band in self.DES_PASSBANDS}
+        self.observationTime = {band: [] for band in DES_PASSBANDS}
 
-        self.xi0_GPR = {band: [] for band in self.DES_PASSBANDS}
-        self.xi0err_GPR = {band: [] for band in self.DES_PASSBANDS}
+        self.starDensity = {band: [] for band in DES_PASSBANDS}
 
-        self.red = {band: [] for band in self.DES_PASSBANDS}
-        self.rederr = {band: [] for band in self.DES_PASSBANDS}
+        self.Kvariance = {band: [] for band in DES_PASSBANDS}
+        self.OuterScale = {band: [] for band in DES_PASSBANDS}
+        self.Diameter = {band: [] for band in DES_PASSBANDS}
+        self.Wind_X = {band: [] for band in DES_PASSBANDS}
+        self.Wind_Y = {band: [] for band in DES_PASSBANDS}
 
-        self.xiplus_raw = {band: [] for band in self.DES_PASSBANDS}
-        self.xiplus_GPR = {band: [] for band in self.DES_PASSBANDS}
-        self.r = {band: [] for band in self.DES_PASSBANDS}
+        self.totalTime = {band: [] for band in DES_PASSBANDS}
+        self.avgGPTime = {band: [] for band in DES_PASSBANDS}
+        self.nStepsfC = {band: [] for band in DES_PASSBANDS}
+        self.nSteps1 = {band: [] for band in DES_PASSBANDS}
+        self.nSteps2 = {band: [] for band in DES_PASSBANDS}
+        self.nStepsGP = {band: [] for band in DES_PASSBANDS}
 
-        self.RMS_raw = {band: [] for band in self.DES_PASSBANDS}
-        self.RMSerr_raw = {band: [] for band in self.DES_PASSBANDS}
+        self.xi0_raw = {band: [] for band in DES_PASSBANDS}
+        self.xi0err_raw = {band: [] for band in DES_PASSBANDS}
+        self.xi0_GPR = {band: [] for band in DES_PASSBANDS}
+        self.xi0err_GPR = {band: [] for band in DES_PASSBANDS}
+        self.red = {band: [] for band in DES_PASSBANDS}
+        self.rederr = {band: [] for band in DES_PASSBANDS}
+        self.RMS_raw = {band: [] for band in DES_PASSBANDS}
+        self.RMSerr_raw = {band: [] for band in DES_PASSBANDS}
+        self.RMS_GPR = {band: [] for band in DES_PASSBANDS}
+        self.RMSerr_GPR = {band: [] for band in DES_PASSBANDS}
 
-        self.RMS_GPR = {band: [] for band in self.DES_PASSBANDS}
-        self.RMSerr_GPR = {band: [] for band in self.DES_PASSBANDS}
+        self.xiplus_raw = {band: [] for band in DES_PASSBANDS}
+        self.xiplus_GPR = {band: [] for band in DES_PASSBANDS}
+        self.r = {band: [] for band in DES_PASSBANDS}
 
-        self.observationTime = {band: [] for band in self.DES_PASSBANDS}
-
-        self.Kvariance = {band: [] for band in self.DES_PASSBANDS}
-        self.OuterScale = {band: [] for band in self.DES_PASSBANDS}
-        self.Diameter = {band: [] for band in self.DES_PASSBANDS}
-        self.Wind_X = {band: [] for band in self.DES_PASSBANDS}
-        self.Wind_Y = {band: [] for band in self.DES_PASSBANDS}
-
-        self.totalTimes = {band: [] for band in self.DES_PASSBANDS}
-        self.avgGPTimes = {band: [] for band in self.DES_PASSBANDS}
-        self.nStepsfC = {band: [] for band in self.DES_PASSBANDS}
-        self.nSteps1 = {band: [] for band in self.DES_PASSBANDS}
-        self.nSteps2 = {band: [] for band in self.DES_PASSBANDS}
-        self.nStepsGP = {band: [] for band in self.DES_PASSBANDS}
-        
-#         self.stardensitys
-
+    def calcVals(self, rMax=0.5*u.arcmin):
         for FITSfile in self.FITSfiles:
             dC = GPRutils.loadFITS(FITSfile)
 
             obs = GPRutils.dataContainer().load(dC.expNum, returnObs=True)
             self.observationTime[dC.band].append(obs)
+
+            nStars = len(dC.TV[dC.TV["Maskf"]])
+            starDensity = (nStars / (3*u.deg**2)).to(u.arcmin**-2)
+            self.starDensity[dC.band].append(starDensity)
 
             self.Kvariance[dC.band].append(dC.params[0])
             self.OuterScale[dC.band].append(dC.params[1])
@@ -81,8 +86,8 @@ class AggregatePlots(object):
 
             out = DESutils.parseOutfile(dC.OUTfile)
             if out.finished:
-                self.totalTimes[dC.band].append(out.totalTime.value)
-                self.avgGPTimes[dC.band].append(out.avgGPTime.value)
+                self.totalTime[dC.band].append(out.totalTime.value)
+                self.avgGPTime[dC.band].append(out.avgGPTime.value)
                 self.nStepsfC[dC.band].append(out.nfC)
                 self.nSteps1[dC.band].append(out.nOpt1)
                 self.nSteps2[dC.band].append(out.nOpt2)
@@ -105,6 +110,12 @@ class AggregatePlots(object):
             err = ((xi0err_raw/xi0_raw)**2 + (xi0err_GPR/xi0_GPR)**2)
             rederr = np.sqrt(err * red**2).value
 
+            RMS_raw = np.sqrt(xi0_raw / 2)
+            RMSerr_raw = np.abs(RMS_raw / (2 * xi0_raw)) * xi0err_raw
+
+            RMS_GPR = np.sqrt(xi0_GPR / 2)
+            RMSerr_GPR = np.abs(RMS_GPR / (2 * xi0_GPR)) * xi0err_GPR
+
             self.xi0_raw[dC.band].append(xi0_raw)
             self.xi0err_raw[dC.band].append(xi0err_raw)
 
@@ -114,7 +125,13 @@ class AggregatePlots(object):
             self.red[dC.band].append(red)
             self.rederr[dC.band].append(rederr)
 
-            SUBSETS = ["Subset A", "Subset B", "Subset C", "Subset D", "Subset E"]
+            self.RMS_raw[dC.band].append(RMS_raw)
+            self.RMSerr_raw[dC.band].append(RMSerr_raw)
+
+            self.RMS_GPR[dC.band].append(RMS_GPR)
+            self.RMSerr_GPR[dC.band].append(RMSerr_GPR)
+
+        def calcArrs(self):
             for subset in SUBSETS:
                 mask = dC.TV["Maskf"] & dC.TV[subset]
 
@@ -140,6 +157,7 @@ class AggregatePlots(object):
 
                 r = np.nanmean(np.vstack([r_raw, r_GPR]), axis=0)
                 self.r[dC.band].append(r)
+
 
 def AstrometricResiduals(
     x, y, dx, dy, err,
