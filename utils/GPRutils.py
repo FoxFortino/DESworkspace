@@ -263,8 +263,10 @@ class dataContainer(object):
         maxDESErr: u.mas**2 = np.inf*u.mas**2,
         minDESErr: u.mas**2 = -np.inf*u.mas**2,
         downselect: float = 1.0,
+        maxStars: int = 15000,
         useRMS: bool = False,
-        returnObs: bool = False
+        returnObs: bool = False,
+        returnRA0DEC0: bool = False
             ):
         """
         This function formats DES and Gaia astrometry data.
@@ -296,6 +298,9 @@ class dataContainer(object):
                 Fraction of the dataset (after sigma clipping and maxDESErr or
                 minDESErr have been appled) to keep. The rest will also be
                 masked out with Mask0.
+            maxStars : int
+                Maximum number of Gaia stars to include. Use this when not
+                enough RAM is available.
             useRMS : bool
                 Whether or not to replace each object's DES variance value
                 with an empirically calculated 2x2 diagonal covariance matrix.
@@ -304,6 +309,8 @@ class dataContainer(object):
             returnObs : bool
                 If True, returns the time of exposure and does not complete
                 the full method.
+            returnRA0DEC0 : bool
+                If True, returns the center RA and Dec of the exposure.
         """
         self.expNum = expNum
         self.earthRef = earthRef
@@ -326,6 +333,12 @@ class dataContainer(object):
         # Return time of observation. Likely for plotting purposes.
         if returnObs:
             return DES_obs
+        
+        # Return center RA and Dec, likely for re-doing gnomonic projection.
+        # This is useful for fitting an orbit to an object and you need to re-calculate
+        # What the original RA and Dec was.
+        if returnRA0DEC0:
+            return ra0, dec0
 
         # Grab filenames for each tile for this exposure.
         tilefiles = DESutils.findTiles(self.expNum, confirmTiles=True)
@@ -386,13 +399,14 @@ class dataContainer(object):
 
         # This slice can index the Gaia catalog for only the stars that have a
         # DES match within tol.
-        self.ind_GAIA = np.where(sep2d < tol)[0]
+        self.ind_GAIA = np.where(sep2d < tol)[0][:maxStars]
 
         # This slice can index the DES catalog for only the stars that have a
         # Gaia match within tol. Will be in the same order as ind_GAIA
-        self.ind_DES = idx[self.ind_GAIA]
-
-        print(f"There were {self.ind_GAIA.size} matches within {tol}.")
+        self.ind_DES = idx[self.ind_GAIA][:maxStars]
+        
+        print(f"Maximum allowed stars is {maxStars}, but")
+        print(f"    there were {np.where(sep2d < tol)[0].size} matches within {tol}.")
 
         # Transformation matrix from ICRS to gnomonic projection about
         # (ra0, dec0).
@@ -482,6 +496,8 @@ class dataContainer(object):
         self.E_DES = DES_err
 
         # Load the TV set (Training + Validation) into an astropy table.
+        RA = tb.Column(data=DES_ra[self.ind_DES], name=f"NEW RA")
+        DEC = tb.Column(data=DES_dec[self.ind_DES], name=f"NEW DEC")
         x = tb.Column(data=self.X[self.ind_DES][:, 0], name=f"X")
         y = tb.Column(data=self.X[self.ind_DES][:, 1], name=f"Y")
         dx = tb.Column(data=self.Y[:, 0].to(u.mas), name=f"dX")
@@ -490,7 +506,7 @@ class dataContainer(object):
                             name=f"DES variance")
         err_GAIA = tb.Column(data=self.E_GAIA,
                              name=f"GAIA covariance")
-        self.TV = tb.QTable([x, y, dx, dy, err_DES, err_GAIA])
+        self.TV = tb.QTable([RA, DEC, x, y, dx, dy, err_DES, err_GAIA])
 
         # Sigma clip on the TV residuals. This usually removes about 100
         # objects.
@@ -626,14 +642,18 @@ class dataContainer(object):
 
         # Create the prediction dataset table that represents all DES objects
         # that don't have a Gaia counterpart.
+        DES_ra = np.delete(DES_ra, self.ind_DES, axis=0)
+        DES_dec = np.delete(DES_dec, self.ind_DES, axis=0)
         Xpred = np.delete(self.X, self.ind_DES, axis=0)
         Epred = np.delete(self.E_DES, self.ind_DES, axis=0)
 
+        RA = tb.Column(data=DES_ra, name=f"NEW RA")
+        DEC = tb.Column(data=DES_dec, name=f"NEW DEC")
         x = tb.Column(data=Xpred[:, 0], name="X")
         y = tb.Column(data=Xpred[:, 1], name="Y")
         e = tb.Column(data=Epred, name="DES variance")
 
-        self.Pred = tb.QTable([x, y, e])
+        self.Pred = tb.QTable([RA, DEC, x, y, e])
 
         # Make the training and validation sets into attributes of this object
         # like how vK2KGPR.py expects it.
@@ -1111,25 +1131,24 @@ def loadFITS(FITSfile: str) -> dataContainer:
     dataC.params[3] = hdul[0].header["wind_x"]
     dataC.params[4] = hdul[0].header["wind_y"]
 
-    try:
-        # Load the kernel parameters from after the fitCorr step.
-        dataC.fitCorrParams = np.zeros(5)
-        dataC.fitCorrParams[0] = hdul[0].header["fC_var"]
-        dataC.fitCorrParams[1] = hdul[0].header["fC_outerScale"]
-        dataC.fitCorrParams[2] = hdul[0].header["fC_diameter"]
-        dataC.fitCorrParams[3] = hdul[0].header["fC_wind_x"]
-        dataC.fitCorrParams[4] = hdul[0].header["fC_wind_y"]
-        dataC.TV["fbar_s dX fC"].unit = u.mas
-        dataC.TV["fbar_s dY fC"].unit = u.mas
-    except Exception:
-        # Load the kernel parameters from after the fitCorr step.
-        # Use the old style of key. The fbar_s fC columns won't exist.
-        dataC.fitCorrParams = np.zeros(5)
-        dataC.fitCorrParams[0] = hdul[0].header["fcvar"]
-        dataC.fitCorrParams[1] = hdul[0].header["fcouterScale"]
-        dataC.fitCorrParams[2] = hdul[0].header["fcdiameter"]
-        dataC.fitCorrParams[3] = hdul[0].header["fcwind_x"]
-        dataC.fitCorrParams[4] = hdul[0].header["fcwind_y"]
+    # Load the kernel parameters from after the fitCorr step.
+    dataC.fitCorrParams = np.zeros(5)
+    dataC.fitCorrParams[0] = hdul[0].header["fC_var"]
+    dataC.fitCorrParams[1] = hdul[0].header["fC_outerScale"]
+    dataC.fitCorrParams[2] = hdul[0].header["fC_diameter"]
+    dataC.fitCorrParams[3] = hdul[0].header["fC_wind_x"]
+    dataC.fitCorrParams[4] = hdul[0].header["fC_wind_y"]
+    dataC.TV["fbar_s dX fC"].unit = u.mas
+    dataC.TV["fbar_s dY fC"].unit = u.mas
+    
+#     # Load the kernel parameters from after the fitCorr step.
+#     # Use the old style of key. The fbar_s fC columns won't exist.
+#     dataC.fitCorrParams = np.zeros(5)
+#     dataC.fitCorrParams[0] = hdul[0].header["fcvar"]
+#     dataC.fitCorrParams[1] = hdul[0].header["fcouterScale"]
+#     dataC.fitCorrParams[2] = hdul[0].header["fcdiameter"]
+#     dataC.fitCorrParams[3] = hdul[0].header["fcwind_x"]
+#     dataC.fitCorrParams[4] = hdul[0].header["fcwind_y"]
 
     # Load in the prediction set.
     dataC.Pred = tb.QTable(hdul[2].data)

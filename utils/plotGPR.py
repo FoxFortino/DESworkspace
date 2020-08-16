@@ -6,7 +6,12 @@ import DESutils
 import numpy as np
 import astropy.units as u
 import matplotlib.pyplot as plt
-plt.style.use('~/GitHub/custom-matplotlib/custom.mplstyle')
+# plt.style.use('~/GitHub/custom-matplotlib/custom.mplstyle')
+import astropy.stats as stats
+from scipy.signal import savgol_filter
+
+
+from IPython import embed
 
 
 SUBSETS = ["Subset A", "Subset B", "Subset C", "Subset D", "Subset E"]
@@ -19,16 +24,21 @@ DES_COLORS = {
     "z": "#6600cc",
     "Y": "#000000"
     }
+DES_MARKERS = {
+    "u": "1",
+    "g": "*",
+    "r": "o",
+    "i": "x",
+    "z": "s",
+    "Y": "^"
+    }
 
 
 class AggregatePlots(object):
 
     def __init__(self, FITSfiles):
         """
-        Do all of the parsing of the outfiles and calculating of xi0, etc, in the init method or maybe another method. Then when you call the plotting routines, you can specify which  bands you want included in the plot. However, when calculating the mean value for a plot, still show a different label for each band. And if the mean/median is plotted on the plot normally, don't plot these if multiple bands are plotted
-
-
-        Put the xiBA and avgxi plots here. Timexi if I feel like it, but probably won't be using that one. Remove horizontal lines from avgxi plot. Normalize avgxi plot by dividing by xi0?
+        Timexi if I feel like it, but probably won't be using that one. Remove horizontal lines from avgxi plot. Normalize avgxi plot by dividing by xi0?
 
         Do a histogram plot of the RMS values (like in timexi) for before after.
 
@@ -65,10 +75,25 @@ class AggregatePlots(object):
         self.RMSerr_raw = {band: [] for band in DES_PASSBANDS}
         self.RMS_GPR = {band: [] for band in DES_PASSBANDS}
         self.RMSerr_GPR = {band: [] for band in DES_PASSBANDS}
-
+        
         self.xiplus_raw = {band: [] for band in DES_PASSBANDS}
         self.xiplus_GPR = {band: [] for band in DES_PASSBANDS}
         self.r = {band: [] for band in DES_PASSBANDS}
+        
+        self.xi0_raw_fC = {band: [] for band in DES_PASSBANDS}
+        self.xi0err_raw_fC = {band: [] for band in DES_PASSBANDS}
+        self.xi0_GPR_fC = {band: [] for band in DES_PASSBANDS}
+        self.xi0err_GPR_fC = {band: [] for band in DES_PASSBANDS}
+        self.red_fC = {band: [] for band in DES_PASSBANDS}
+        self.rederr_fC = {band: [] for band in DES_PASSBANDS}
+        self.RMS_raw_fC = {band: [] for band in DES_PASSBANDS}
+        self.RMSerr_raw_fC = {band: [] for band in DES_PASSBANDS}
+        self.RMS_GPR_fC = {band: [] for band in DES_PASSBANDS}
+        self.RMSerr_GPR_fC = {band: [] for band in DES_PASSBANDS}
+        
+        self.xiplus_raw_fC = {band: [] for band in DES_PASSBANDS}
+        self.xiplus_GPR_fC = {band: [] for band in DES_PASSBANDS}
+        self.r_fC = {band: [] for band in DES_PASSBANDS}
 
     def calcVals(self, rMax=0.5*u.arcmin):
         for FITSfile in self.FITSfiles:
@@ -135,6 +160,40 @@ class AggregatePlots(object):
 
             self.RMS_GPR[dC.band].append(RMS_GPR)
             self.RMSerr_GPR[dC.band].append(RMSerr_GPR)
+            
+
+            xi1, xi2 = dC.JackKnifeXi(rMax=rMax, fC=True)
+            xi0_raw, xi0_GPR = np.abs(xi1[0].value), np.abs(xi2[0].value)
+            xi0Xerr_raw, xi0Xerr_GPR = xi1[1].value, xi2[1].value
+            xi0Yerr_raw, xi0Yerr_GPR = xi1[2].value, xi2[2].value
+
+            xi0err_raw = np.sqrt(xi0Xerr_raw**2 + xi0Yerr_raw**2)
+            xi0err_GPR = np.sqrt(xi0Xerr_GPR**2 + xi0Yerr_GPR**2)
+
+            red = (xi0_raw / xi0_GPR)
+            err = ((xi0err_raw/xi0_raw)**2 + (xi0err_GPR/xi0_GPR)**2)
+            rederr = np.sqrt(err * red**2)
+
+            RMS_raw = np.sqrt(xi0_raw / 2)
+            RMSerr_raw = np.abs(RMS_raw / (2 * xi0_raw)) * xi0err_raw
+
+            RMS_GPR = np.sqrt(xi0_GPR / 2)
+            RMSerr_GPR = np.abs(RMS_GPR / (2 * xi0_GPR)) * xi0err_GPR
+
+            self.xi0_raw_fC[dC.band].append(xi0_raw)
+            self.xi0err_raw_fC[dC.band].append(xi0err_raw)
+
+            self.xi0_GPR_fC[dC.band].append(xi0_GPR)
+            self.xi0err_GPR_fC[dC.band].append(xi0err_GPR)
+
+            self.red_fC[dC.band].append(red)
+            self.rederr_fC[dC.band].append(rederr)
+
+            self.RMS_raw_fC[dC.band].append(RMS_raw)
+            self.RMSerr_raw_fC[dC.band].append(RMSerr_raw)
+
+            self.RMS_GPR_fC[dC.band].append(RMS_GPR)
+            self.RMSerr_GPR_fC[dC.band].append(RMSerr_GPR)
 
     def calcArrs(self):
         for FITSfile in self.FITSfiles:
@@ -164,92 +223,32 @@ class AggregatePlots(object):
 
                 r = np.nanmean(np.vstack([r_raw, r_GPR]), axis=0)
                 self.r[dC.band].append(r)
+                
+            for subset in SUBSETS:
+                mask = dC.TV["Maskf"] & dC.TV[subset]
 
-    def xiBA(
-        self,
-        annotate=False,
-        save=None
-            ):
-        framealpha = 0.5
+                fbar_s_x = dC.TV[mask]["fbar_s dX fC"].to(u.mas)
+                fbar_s_y = dC.TV[mask]["fbar_s dY fC"].to(u.mas)
 
-        plt.figure(figsize=(20, 10))
+                x = dC.TV[mask]["X"].to(u.deg)
+                y = dC.TV[mask]["Y"].to(u.deg)
 
-        bandHandles = []
-        for band in DES_PASSBANDS:
+                dx = dC.TV[mask]["dX"].to(u.mas)
+                dy = dC.TV[mask]["dY"].to(u.mas)
 
-            if len(self.observationTime[band]) == 0:
-                continue
+                dx2 = dx - fbar_s_x
+                dy2 = dy - fbar_s_y
 
-            for i in range(len(self.FITSfiles)):
-                xi0_raw = self.xi0_raw[band][i]
-                xi0_GPR = self.xi0_GPR[band][i]
+                result_raw = GPRutils.calcCorrelation(x, y, dx, dy)
+                self.xiplus_raw_fC[dC.band].append(result_raw[1])
+                r_raw = np.exp(result_raw[0])
 
-                xi0err_raw = self.xi0err_raw[band][i]
-                xi0err_GPR = self.xi0err_GPR[band][i]
+                result_GPR = GPRutils.calcCorrelation(x, y, dx2, dy2)
+                self.xiplus_GPR_fC[dC.band].append(result_GPR[1])
+                r_GPR = np.exp(result_GPR[0])
 
-            plt.errorbar(
-                xi0_raw, xi0_GPR,
-                xerr=xi0err_raw, yerr=xi0err_GPR,
-                color=DES_COLORS[band], marker=".",
-                linewidth=0.5, capsize=1)
-            if annotate:
-                plt.annotate(
-                    f"{self.expNums[i]}",
-                    (xi0_raw, xi0_GPR),
-                    fontsize=10)
-
-            bandHandle = plt.scatter(
-                -1, 0,
-                alpha=1,
-                color=DES_COLORS["g"],
-                label=f"DES Passband {band}\n"
-                      f"Mean: {np.mean(self.red[band]):.3f}")
-            bandHandles.append(bandHandle)
-
-        bandLegend = plt.legend(
-            handles=bandHandles,
-            loc="upper right",
-            framealpha=framealpha)
-        plt.gca().add_artist(bandLegend)
-
-        plt.ylim((0, None))
-        plt.xlim((0, None))
-
-        x = np.linspace(0, 5000, 2)
-
-        noChange = plt.plot(
-            x, x,
-            "k:",
-            label="No Change")[0]
-
-        red5 = plt.plot(
-            x, x/5,
-            c="tab:blue", ls=":",
-            label="5x Reduction")[0]
-
-        red10 = plt.plot(
-            x, x/10,
-            c="tab:orange",
-            ls=":",
-            label="10x Reduction")[0]
-
-        red20 = plt.plot(
-            x, x/20,
-            c="tab:green", ls=":",
-            label="20x Reduction")[0]
-
-        refLegend = plt.legend(
-            handles=[noChange, red5, red10, red20],
-            loc="upper left",
-            framealpha=framealpha)
-        plt.gca().add_artist(refLegend)
-
-        plt.xlabel(r"$\xi_{0}$ Raw [mas$^2$]")
-        plt.ylabel(r"$\xi_{0}$ GPR Model Subtracted [mas$^2$]")
-
-        if save is not None:
-            plt.savefig(save)
-        plt.show()
+                r = np.nanmean(np.vstack([r_raw, r_GPR]), axis=0)
+                self.r_fC[dC.band].append(r)
 
 
 def AstrometricResiduals(

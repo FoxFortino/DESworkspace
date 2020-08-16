@@ -1,5 +1,6 @@
 import os
 import glob
+import pickle
 
 import numpy as np
 import astropy.units as u
@@ -160,7 +161,7 @@ def findTiles(
         if confirm != 0:
             confirmed_tilefiles.append(tilefile)
         else:
-            print(f"{tilefile} doesn't to include exposure {expNum}.")
+            print(f"{tilefile} doesn't include exposure {expNum}.")
 
     # Check if at least one tile could be confirmed.
     if len(confirmed_tilefiles) != 0:
@@ -213,6 +214,163 @@ def getBand(
     band = np.unique(tile[tile["EXPNUM"] == expNum]["BAND"])[0]
 
     return band
+
+
+def get_allExposures(zoneDir: str) -> list:
+    """
+    Given an directory of DES zones, find all exposures represented in it.
+    
+    This function searches through all tile files in a directory. It opens each one and gets the list of
+    all exposures for each tile and compiles them in a list. There will obviously be many repeat exposures
+    in this list so we take np.unique on the list.
+    
+    Arugments
+    --------
+    zoneDir : str
+        The directory where the DES tiles are.
+        
+    Returns
+    -------
+    allExposures : np.ndarray
+        All Exposures that are present in a particular DES zone.
+    """
+    # Ensure that zoneDir is a real directory
+    if not os.path.isdir(zoneDir):
+        raise FileNotFoundError(f"Directory does not exist: {zoneDir}")
+    
+    tileWC = "DES????[+,-]????_final.fits"
+    tiles = sorted(glob.glob(os.path.join(zoneDir, tileWC)))
+    allExposures = []
+    for tile in tiles:
+        table = tb.Table.read(tile)
+        exps = np.unique(np.array(table["EXPNUM"]))
+        allExposures.extend(exps)
+        
+    # Exposures number 999999 is the exposure number given to coadd objects.
+    allExposures = np.delete(np.unique(allExposures), np.argmax([np.unique(allExposures) == 999999]))
+    
+    return allExposures
+
+def get_bandDict(
+    zoneDir: str,
+    allExposures: list,
+    tileRef: str = "/home/fortino/DESworkspace/data/expnum_tile.fits.gz"
+        ) -> tuple:
+    """
+    Return a list of complete exposures and its bandDict.
+    
+    Given a list of DES exposures and a DES zone directory, return a list of only 
+    the complete exposures in that zone, as well as the bandDict that organizes the
+    complete exposures based on the DES passband of that exposure.
+    
+    Arugments
+    ---------
+    exposures : list
+        List of DES exposure numbers.
+        
+    Keyword Arguments
+    -----------------
+    tileRef : str
+        Reference file that relates exposure number to DES tile name.
+    
+    Returns
+    -------
+    completeExposures : list
+        List of all complete exposures in the zone.
+    bandDict : dict
+        Dictionary of complete exposures, organized by their DES passband.
+    """
+    tileRef = tb.Table.read(tileRef)
+    
+    completeExposures = []
+    bandDict = {"g": [], "r": [], "i": [], "z": [], "Y": []}
+    for expNum in allExposures:
+
+        # Find all tiles for the particular exposure.
+        tilefiles = findTiles(expNum)
+        for tilefile in tilefiles:
+            
+            # Get the directory of the tile. Each zone has its own directory,
+            # so making sure that this directory matches zoneDir will ensure that
+            # each tile is inside of zoneDir.
+            directory = os.path.dirname(tilefile)
+            if directory != zoneDir:
+                break
+        else:
+            completeExposures.append(expNum)
+            band = getBand(expNum)
+            bandDict[band].append(expNum)
+            
+    return completeExposures, bandDict
+
+def createBandDict(
+    zoneDir: str,
+    savePath: str = "/home/fortino/DESworkspace/data",
+    searchPath: str = "/home/fortino/DESworkspace/data"
+        ) -> tuple:
+    """
+    Given a DES zone directory, find all complete exposures in it.
+    
+    A complete exposure in a zone is one where all of its associated tiles lie inside
+    the zone. get_allExposures will return all exposures, complete and incomplete, from 
+    a particular zone. This function will return only complete exposures. Additionally, 
+    this function return bandDict, a dictionary where the keys are DES passband letters 
+    (g, r, i, z, Y) and the values are lists of exposures.
+    
+    Additionally, this function will save
+    
+    Arguments
+    ---------
+    zoneDir : str
+        The directory where the DES tiles are.
+    
+    Keyword Arguments
+    -----------------
+    savePath : str
+        The path to save the pickle files to.
+    searchPath : str
+        The path to look for pickle files.
+        
+    Returns
+    -------
+    completeExposures : list
+        List of all complete exposures in the zone.
+    bandDict : dict
+        Dictionary of complete exposures, organized by their DES passband.
+    """
+    
+    # Get the DES zone from the path.
+    zone = os.path.basename(zoneDir)
+    
+    # Load the completeExposures list and bandDict dictionary if they exist.
+    if searchPath is not None:
+        bdfile = os.path.join(searchPath, zone+"_bd.pkl")
+        cefile = os.path.join(searchPath, zone+"_ce.pkl")
+        if os.path.isfile(bdfile) and os.path.isfile(cefile):
+            with open(bdfile, "rb") as file:
+                bandDict = pickle.load(file)
+            with open(cefile, "rb") as file:
+                completeExposures = pickle.load(file)
+            return completeExposures, bandDict
+    
+    # Get all of the exposures in the zone.
+    allExposures = get_allExposures(zoneDir)
+    
+    # Narrow down all of the exposures to only the complete ones, and get the
+    # completeExposures list and the bandDict dictionary.
+    completeExposures, bandDict = get_bandDict(zoneDir, allExposures)
+
+    # Save the completeExposures list and the bandDict dictionary as pickle files.
+    if savePath is not None:
+        bdfile = os.path.join(savePath, zone+"_bd.pkl")
+        with open(bdfile, "wb") as file:
+            pickle.dump(bandDict, file)
+
+        cefile = os.path.join(savePath, zone+"_ce.pkl")
+        with open(cefile, "wb") as file:
+            pickle.dump(completeExposures, file)
+
+    return completeExposures, bandDict
 
 
 class parseOutfile(object):
