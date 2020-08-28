@@ -72,11 +72,6 @@ class dataContainer(object):
         residual field. Second panel is the GPR's estimate of the observed
         residual field. Third panel is the subtraction of the observed
         residual field from the GPR's estimate.
-        
-        Arugments
-        ---------
-        OUTfile : str
-            Name of the .out file that was created along with the .fits file.
 
         Keyword Arguments
         -----------------
@@ -85,74 +80,59 @@ class dataContainer(object):
             much faster if you only want to know the xi_0.02 and kernel
             parameters.
         """
-#         out = DESutils.parseOutfile(OUTfile)
-#         if not out.finished:
-#             print(f"{OUTfile} not finished.")
-#             return
+        
+        out = DESutils.parseOutfile(self.OUTfile)
 
         # Print a simply header.
         exp_band = f"{self.expNum} {self.band}"
         print(f"#####{exp_band:-^20}#####")
-#         print(f"Total Time: {out.totalTime:.3f}")
-#         print(f"Average GP Calculation Tmie: {out.avgGPTime:.3f}")
-        
-#         print("-"*30)
-        # This is in a try-except block because some some FITS files won't
-        # have this information because they are old. Eventually the
-        # try-except block here won't be necessary.
-        print("  Fitted von Kármán kernel parameters:")
-        printParams(self.fitCorrParams, header=True, printing=True)
-        printParams(self.fitCorrParams, printing=True)
-        
-#         print("-"*30)
-#         print(f"  Correlation Fitting Time: {out.fitCorrTime:.3f}, {out.nfC} steps")
-
-#         N = len(self.TV[self.TV["MaskCorrFit"]])
-#         starDensity = (N / (3*u.deg**2)).to(u.arcmin**-2)
-#         print(f"  Star Density: {starDensity:.3f}")
-
-        xi0 = self.header["fC_xi0"]
-        Xerr = self.header["fC_xi0_Xerr"]
-        Yerr = self.header["fC_xi0_Yerr"]
-        xi0err = np.sqrt(Xerr**2 + Yerr**2)
-        print(f"    xi0: {xi0:.3f} ± {xi0err:.3f}")
-
-        xif = self.header["fC_xif"]
-        Xerr = self.header["fC_xif_Xerr"]
-        Yerr = self.header["fC_xif_Yerr"]
-        xiferr = np.sqrt(Xerr**2 + Yerr**2)
-        print(f"    xif: {xif:.3f} ± {xiferr:.3f}")
-
-        red = xi0/xif
-        rederr = np.sqrt(((xi0err/xi0)**2 + (xiferr/xif)**2) * red**2)
-        print(f"    Reduction: {red:.3f} ± {rederr:.3f}")
-        
-#         print("-"*30)
-        print("  Final von Kármán kernel parameters:")
-        printParams(self.params, header=True, printing=True)
-        printParams(self.params, printing=True)
-#         print("-"*30)
-#         print(f"  Optmization Time: {out.optTime:.3f}, {out.nGP} ({out.nOpt1} {out.nOpt2}) steps")
-        
-#         N = len(self.TV[self.TV["MaskJackKnife"]])
-#         starDensity = (N / (3*u.deg**2)).to(u.arcmin**-2)
-#         print(f"  Star Density: {starDensity:.3f}")
+        print(f"Total Time: {out.totalTime:.3f}")
+        print(f"Average GP Calculation Tmie: {out.avgGPTime:.3f}")
+        print()
         
         xi0 = self.header["xi0"]
         Xerr = self.header["xi0_Xerr"]
         Yerr = self.header["xi0_Yerr"]
         xi0err = np.sqrt(Xerr**2 + Yerr**2)
-        print(f"    xi0: {xi0:.3f} ± {xi0err:.3f}")
+        print(f"xi0 Raw       : {xi0:.3f} ± {xi0err:.3f}")
 
+        xif = self.header["fC_xif"]
+        Xerr = self.header["fC_xif_Xerr"]
+        Yerr = self.header["fC_xif_Yerr"]
+        xiferr = np.sqrt(Xerr**2 + Yerr**2)
+        print(f"xi0 Fitted    : {xif:.3f} ± {xiferr:.3f}")
+
+        red = xi0/xif
+        rederr = np.sqrt(((xi0err/xi0)**2 + (xiferr/xif)**2) * red**2)
+        print(f"  Fitted Reduction    : {red:.3f} ± {rederr:.3f}")
+        
         xif = self.header["xif"]
         Xerr = self.header["xif_Xerr"]
         Yerr = self.header["xif_Yerr"]
         xiferr = np.sqrt(Xerr**2 + Yerr**2)
-        print(f"    xif: {xif:.3f} ± {xiferr:.3f}")
+        print(f"xi0 Optimized : {xif:.3f} ± {xiferr:.3f}")
 
         red = xi0/xif
         rederr = np.sqrt(((xi0err/xi0)**2 + (xiferr/xif)**2) * red**2)
-        print(f"    Reduction: {red:.3f} ± {rederr:.3f}")
+        print(f"  Optimized Reduction: {red:.3f} ± {rederr:.3f}")
+        print()
+        
+        print("Fitted von Kármán kernel parameters:")
+        printParams(self.fitCorrParams, header=True, printing=True)
+        printParams(self.fitCorrParams, printing=True)
+        print(f"  Correlation Fitting Time: {out.fitCorrTime:.3f}, {out.nfC} steps")
+        N = len(self.TV[self.TV["MaskCorrFit"]])
+        starDensity = (N / (3*u.deg**2)).to(u.arcmin**-2)
+        print(f"  Star Density: {starDensity:.3f}")
+        print()
+        
+        print("Optimized von Kármán kernel parameters:")
+        printParams(self.params, header=True, printing=True)
+        printParams(self.params, printing=True)
+        print(f"  Optmization Time: {out.optTime:.3f}, {out.nGP} ({out.nOpt1} {out.nOpt2}) steps")
+        N = len(self.TV[self.TV["MaskJackKnife"]])
+        starDensity = (N / (3*u.deg**2)).to(u.arcmin**-2)
+        print(f"  Star Density: {starDensity:.3f}")
         print()
 
 
@@ -1097,7 +1077,7 @@ def loadFITS(FITSfile: str) -> dataContainer:
     # First load set the kwarg metadata.
     dataC = dataContainer()
     dataC.FITSfile = FITSfile
-    dataC.OUTfile = os.path.splitext(FITSfile)[0]+".out"
+    dataC.OUTfile = os.path.splitext(file)[0]+".out"
     dataC.header = hdul[0].header
     dataC.expNum = hdul[0].header["expNum"]
     dataC.band = hdul[0].header["band"]
