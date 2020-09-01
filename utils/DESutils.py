@@ -98,21 +98,24 @@ be somewhat incomplete.
 
 def findTiles(
     expNum: int,
-    confirmTiles: bool = False
+    confirmTiles: bool = False,
+    tileRef: str = "/home/fortino/DESworkspace/data/expnum_tile.fits.gz"
         ) -> list:
     """
     Given an exposure, search for all of its constituent tiles.
 
     Arguments
     ---------
-        expNum : int
-            DES exposure number.
+    expNum : int
+        DES exposure number.
 
     Keyword Arguments
     -----------------
-        confirmTiles : bool
-            Whether or not to take extra time to confirm that each tile
-            contains expNum.
+    confirmTiles : bool
+        Whether or not to take extra time to confirm that each tile
+        contains expNum.
+    tileRef : str
+        Reference file that relates exposure number to DES tile name.
 
     Returns
     -------
@@ -130,7 +133,6 @@ def findTiles(
 
     # Open the tileRef file that relates exposure number to tile name. Find
     # all of the tile names that include expNum.
-    tileRef = "/home/fortino/DESworkspace/data/expnum_tile.fits.gz"
     tileRef = tb.Table.read(tileRef)
     tilenames = tileRef[tileRef["EXPNUM"] == expNum]["TILENAME"]
     tilenames = tilenames.data.astype(str)
@@ -179,14 +181,14 @@ def getBand(
 
     Arguments
     ---------
-        expNum : int
-            DES exposure number.
+    expNum : int
+        DES exposure number.
 
     Keyword Arguments
     -----------------
-        confirmTiles : bool
-            Whether or not to take extra time to confirm that each tile
-            contains expNum.
+    confirmTiles : bool
+        Whether or not to take extra time to confirm that each tile
+        contains expNum.
     Returns
     -------
     band : str
