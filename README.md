@@ -3,5 +3,5 @@ Code for the work in [W. F. Fortino et al 2021 AJ 162 106](https://iopscience.io
 
 The code here is designed to intake astrometric data taken from a ground based telescope (such as CTIO) and train a machine learning model (a custom Gaussian process regressor) using astrometry from the space based observatory Gaia in order to remove astrometric error due to atmospheric turbulece.
 
-# Quickstart
+## Quickstart
 Please refer to [tutorial.ipynb](https://github.com/FoxFortino/DESworkspace/blob/master/tutorial.ipynb) for a tutorial on how to get started with this code.
